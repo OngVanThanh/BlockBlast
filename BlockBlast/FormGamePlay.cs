@@ -1,4 +1,5 @@
-﻿using System;
+﻿using BlockBlast.Module;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
@@ -8,13 +9,17 @@ namespace BlockBlast
     public partial class fGamePlay : Form
     {
         private readonly GameManager gameManager = new GameManager();
+        private readonly TutorialManager tutorialManager = new TutorialManager();
 
-        // Trạng thái Drag - Drop
         private int[,] draggingShape = null;
         private int draggingColorIndex = 0;
         private Panel activeDockPanel = null;
         private int hoverRow = -1;
         private int hoverCol = -1;
+        private int dragOffsetX = 0;
+        private int dragOffsetY = 0;
+
+        private Label lblTutorialGuide;
 
         public fGamePlay()
         {
@@ -23,23 +28,74 @@ namespace BlockBlast
 
         private void fGamePlay_Load(object sender, EventArgs e)
         {
-            // Căn giữa UI
+            // 1. Căn giữa giao diện bàn chơi
             int boardX = (this.ClientSize.Width - pnlBoard.Width) / 2;
             int availableHeight = this.ClientSize.Height - pnlHeader.Height - pnlDock.Height;
             int boardY = pnlHeader.Height + (availableHeight - pnlBoard.Height) / 2;
             pnlBoard.Location = new Point(boardX, boardY);
 
-            pnlGameOver.Left = (this.ClientSize.Width - pnlGameOver.Width) / 2;
-            pnlGameOver.Top = (this.ClientSize.Height - pnlGameOver.Height) / 2;
-            pnlGameOver.Visible = false;
+            // 2. Khởi tạo Label hướng dẫn
+            lblTutorialGuide = new Label
+            {
+                AutoSize = false,
+                Size = new Size(pnlBoard.Width, 40),
+                Location = new Point(boardX, boardY - 45),
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font = new Font("Arial", 12, FontStyle.Bold),
+                ForeColor = Color.DarkOrange,
+                BackColor = Color.Transparent
+            };
+            this.Controls.Add(lblTutorialGuide);
 
-            // Đăng ký sự kiện Mouse
+            // 3. Đăng ký sự kiện Mouse & Paint
             this.MouseMove += fGamePlay_MouseMove;
             pnlBoard.MouseMove += fGamePlay_MouseMove;
             this.MouseUp += fGamePlay_MouseUp;
             pnlBoard.MouseUp += fGamePlay_MouseUp;
+            pnlBoard.Paint += pnlBoard_Paint;
 
-            GenerateNewPieces();
+            pnlDockPiece1.Paint += pnlDockPiece_Paint;
+            pnlDockPiece2.Paint += pnlDockPiece_Paint;
+            pnlDockPiece3.Paint += pnlDockPiece_Paint;
+
+            pnlDockPiece1.MouseDown += pnlDockPiece_MouseDown;
+            pnlDockPiece2.MouseDown += pnlDockPiece_MouseDown;
+            pnlDockPiece3.MouseDown += pnlDockPiece_MouseDown;
+
+            // 4. Khởi tạo màn chơi
+            if (tutorialManager.IsTutorialActive)
+            {
+                LoadPuzzleLevel();
+            }
+            else
+            {
+                lblTutorialGuide.Visible = false;
+                GenerateNewPieces();
+            }
+        }
+
+        private void LoadPuzzleLevel()
+        {
+            TutorialStep level = tutorialManager.GetCurrentLevel();
+            if (level == null) return;
+
+            if (lblTutorialGuide != null)
+            {
+                lblTutorialGuide.Text = $"{level.Title}: {level.Instruction}";
+                lblTutorialGuide.Visible = true;
+            }
+
+            // Đồng bộ bàn chơi với GameManager
+            gameManager.Board.SetGrid(level.BoardLayout);
+
+            pnlDockPiece1.Visible = false;
+            pnlDockPiece3.Visible = false;
+
+            pnlDockPiece2.Tag = new BlockPiece(level.DockPieceShape, level.ColorIndex);
+            pnlDockPiece2.Visible = true;
+
+            pnlBoard.Invalidate();
+            pnlDockPiece2.Invalidate();
         }
 
         private void GenerateNewPieces()
@@ -58,12 +114,25 @@ namespace BlockBlast
 
         private void pnlBoard_Paint(object sender, PaintEventArgs e)
         {
-            BoardRenderer.RenderBoard(e.Graphics, gameManager.Board, draggingShape, draggingColorIndex, hoverRow, hoverCol);
+            // Bỏ dragOffsetX và dragOffsetY, chỉ truyền 7 tham số
+            BoardRenderer.RenderBoard(
+                e.Graphics,
+                pnlBoard.Size,
+                gameManager.Board,
+                draggingShape,
+                draggingColorIndex,
+                hoverRow,
+                hoverCol
+            );
         }
 
         private void pnlDockPiece_Paint(object sender, PaintEventArgs e)
         {
-            BoardRenderer.RenderDockPiece(e.Graphics, sender as Panel);
+            Panel pnl = sender as Panel;
+            if (pnl != null && pnl.Visible)
+            {
+                BoardRenderer.RenderDockPiece(e.Graphics, pnl);
+            }
         }
 
         private void pnlDockPiece_MouseDown(object sender, MouseEventArgs e)
@@ -76,7 +145,16 @@ namespace BlockBlast
                     BlockPiece piece = (BlockPiece)activeDockPanel.Tag;
                     draggingShape = piece.Shape;
                     draggingColorIndex = piece.ColorIndex;
+
+                    int rows = draggingShape.GetLength(0);
+                    int cols = draggingShape.GetLength(1);
+                    int tileSize = pnlBoard.Width / GameBoard.BOARD_SIZE;
+
+                    dragOffsetX = (cols * tileSize) / 2;
+                    dragOffsetY = (rows * tileSize) / 2;
+
                     activeDockPanel.Visible = false;
+                    pnlBoard.Invalidate();
                 }
             }
         }
@@ -86,8 +164,13 @@ namespace BlockBlast
             if (draggingShape != null)
             {
                 Point boardPoint = pnlBoard.PointToClient(Cursor.Position);
-                int c = (boardPoint.X - BoardRenderer.MARGIN) / (BoardRenderer.CELL_SIZE + BoardRenderer.GAP);
-                int r = (boardPoint.Y - BoardRenderer.MARGIN) / (BoardRenderer.CELL_SIZE + BoardRenderer.GAP);
+                int tileSize = pnlBoard.Width / GameBoard.BOARD_SIZE;
+
+                int topLeftX = boardPoint.X - dragOffsetX;
+                int topLeftY = boardPoint.Y - dragOffsetY;
+
+                int c = (topLeftX + tileSize / 2) / tileSize;
+                int r = (topLeftY + tileSize / 2) / tileSize;
 
                 if (r >= 0 && r < GameBoard.BOARD_SIZE && c >= 0 && c < GameBoard.BOARD_SIZE &&
                     gameManager.Board.CanPlaceShape(draggingShape, r, c))
@@ -107,95 +190,105 @@ namespace BlockBlast
 
         private void fGamePlay_MouseUp(object sender, MouseEventArgs e)
         {
-            if (e.Button == MouseButtons.Left && draggingShape != null)
+            if (draggingShape == null) return;
+
+            int[,] shapeToPlace = draggingShape;
+            int colorToPlace = draggingColorIndex;
+            Panel currentDock = activeDockPanel;
+
+            draggingShape = null;
+            activeDockPanel = null;
+
+            if (hoverRow != -1 && hoverCol != -1)
             {
-                if (hoverRow != -1 && hoverCol != -1)
+                // 1. Thả gạch vào GameManager.Board
+                gameManager.Board.PlaceShape(shapeToPlace, colorToPlace, hoverRow, hoverCol);
+
+                if (currentDock != null)
                 {
-                    // Dat gach vao ban chơi
-                    gameManager.Board.PlaceShape(draggingShape, draggingColorIndex, hoverRow, hoverCol);
+                    currentDock.Tag = null;
+                    currentDock.Visible = false;
+                }
 
-                    // Xoa gach tai Dock
-                    activeDockPanel.Tag = null;
-                    activeDockPanel.Visible = false;
-
-                    // Cong diem dat gach
-                    int placedBlocks = 0;
-                    foreach (int cell in draggingShape) if (cell != 0) placedBlocks++;
-                    gameManager.AddScore(placedBlocks * 10);
-
-                    // Kiem tra an dong/cot
-                    int lineScore = gameManager.Board.ClearAndScoreLines();
-                    if (lineScore > 0) gameManager.AddScore(lineScore);
-
-                    // Cap nhat UI diem so
+                // 2. Nổ hàng/cột và cộng điểm
+                int scoreGained = gameManager.Board.ClearAndScoreLines();
+                if (scoreGained > 0)
+                {
+                    gameManager.AddScore(scoreGained);
                     lblScore.Text = gameManager.CurrentScore.ToString();
-                    lblBestScore.Text = gameManager.HighScore.ToString();
+                }
 
-                    // Tao 3 khoi moi neu da dung het
-                    if (pnlDockPiece1.Tag == null && pnlDockPiece2.Tag == null && pnlDockPiece3.Tag == null)
+                hoverRow = -1;
+                hoverCol = -1;
+
+                pnlBoard.Refresh();
+
+                // 3. Chuyển màn Tutorial / Game Thường
+                if (tutorialManager.IsTutorialActive)
+                {
+                    if (tutorialManager.NextLevel())
                     {
-                        GenerateNewPieces();
+                        Application.DoEvents();
+                        System.Threading.Thread.Sleep(300);
+                        LoadPuzzleLevel();
                     }
+                    else
+                    {
+                        // HOÀN THÀNH TUTORIAL
+                        if (lblTutorialGuide != null) lblTutorialGuide.Visible = false;
 
-                    // Kiem tra GameOver
-                    CheckGameOver();
+                        Application.DoEvents();
+                        System.Threading.Thread.Sleep(300);
+
+                        // Reset sạch sẽ bàn chơi qua GameManager
+                        gameManager.ResetGame();
+                        lblScore.Text = gameManager.CurrentScore.ToString();
+
+                        GenerateNewPieces();
+
+                        pnlBoard.Invalidate();
+                        pnlBoard.Refresh();
+                    }
                 }
                 else
                 {
-                    if (activeDockPanel != null) activeDockPanel.Visible = true;
+                    if (!pnlDockPiece1.Visible && !pnlDockPiece2.Visible && !pnlDockPiece3.Visible)
+                    {
+                        GenerateNewPieces();
+                    }
+                    CheckGameOver();
                 }
-
-                ResetDragState();
+            }
+            else
+            {
+                // Nếu thả không hợp lệ thì trả lại Dock
+                if (currentDock != null)
+                {
+                    currentDock.Visible = true;
+                    currentDock.Invalidate();
+                }
                 pnlBoard.Invalidate();
             }
         }
 
-        private void ResetDragState()
-        {
-            draggingShape = null;
-            draggingColorIndex = 0;
-            activeDockPanel = null;
-            hoverRow = -1;
-            hoverCol = -1;
-        }
-
         private void CheckGameOver()
         {
-            List<BlockPiece> remaining = new List<BlockPiece>();
-            if (pnlDockPiece1.Tag != null) remaining.Add((BlockPiece)pnlDockPiece1.Tag);
-            if (pnlDockPiece2.Tag != null) remaining.Add((BlockPiece)pnlDockPiece2.Tag);
-            if (pnlDockPiece3.Tag != null) remaining.Add((BlockPiece)pnlDockPiece3.Tag);
+            List<BlockPiece> remainingPieces = new List<BlockPiece>();
 
-            if (gameManager.CheckGameOver(remaining))
+            if (pnlDockPiece1.Visible && pnlDockPiece1.Tag != null)
+                remainingPieces.Add((BlockPiece)pnlDockPiece1.Tag);
+
+            if (pnlDockPiece2.Visible && pnlDockPiece2.Tag != null)
+                remainingPieces.Add((BlockPiece)pnlDockPiece2.Tag);
+
+            if (pnlDockPiece3.Visible && pnlDockPiece3.Tag != null)
+                remainingPieces.Add((BlockPiece)pnlDockPiece3.Tag);
+
+            if (gameManager.CheckGameOver(remainingPieces))
             {
                 pnlGameOver.Visible = true;
                 pnlGameOver.BringToFront();
                 lblFinalScore.Text = $"Điểm của bạn: {gameManager.CurrentScore}";
-            }
-        }
-
-        private void btnPause_Click(object sender, EventArgs e)
-        {
-            gameManager.IsPaused = !gameManager.IsPaused;
-            btnPause.Text = gameManager.IsPaused ? "▶" : "⏸";
-            pnlBoard.Enabled = !gameManager.IsPaused;
-            pnlDock.Enabled = !gameManager.IsPaused;
-        }
-
-        private void btnReplay_Click(object sender, EventArgs e)
-        {
-            gameManager.ResetGame();
-            lblScore.Text = "0";
-            pnlGameOver.Visible = false;
-            GenerateNewPieces();
-            pnlBoard.Invalidate();
-        }
-
-        private void btnExit_Click(object sender, EventArgs e)
-        {
-            if (MessageBox.Show("Bạn muốn dừng chơi và thoát?", "Xác nhận", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
-            {
-                this.Close();
             }
         }
     }

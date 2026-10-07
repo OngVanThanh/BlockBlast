@@ -14,7 +14,7 @@ namespace BlockBlast
             ColorIndex = colorIndex;
         }
 
-        // Danh sách định nghĩa các hình dạng gạch chuẩn
+        // Danh sách các hình dạng khối gạch chuẩn trong game
         public static readonly List<int[,]> AllShapes = new List<int[,]>()
         {
             new int[,] { {1} },                                       // Ô đơn 1x1
@@ -27,6 +27,7 @@ namespace BlockBlast
             new int[,] { {1, 1, 1}, {0, 1, 0} }                       // Chữ T
         };
 
+        // Bảng màu cho từng chỉ số
         public static Color GetColor(int colorIndex)
         {
             switch (colorIndex)
@@ -38,7 +39,7 @@ namespace BlockBlast
                 case 5: return Color.FromArgb(155, 89, 182);  // Tím
                 case 6: return Color.FromArgb(230, 126, 34);  // Cam
                 case 7: return Color.FromArgb(26, 188, 156);  // Xanh ngọc
-                default: return Color.FromArgb(40, 44, 68);   // Ô trống bàn chơi
+                default: return Color.FromArgb(40, 44, 68);   // Ô trống trên bàn chơi
             }
         }
     }
