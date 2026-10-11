@@ -54,6 +54,7 @@ namespace BlockBlast.Module
 
         public static void PlayPickup() => PlayBytes(wavPickup);
         public static void PlayDrop() => PlayBytes(wavDrop);
+        public static void PlayPop() => PlayPickup();
 
         public static void PlayLineClear(int comboLevel)
         {

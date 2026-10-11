@@ -39,9 +39,21 @@ namespace BlockBlast
         // Lớp phủ vẽ khối gạch đang bay theo chuột ở mọi vị trí
         private DragGhostWindow dragGhost;
 
+        public enum GameMode
+        {
+            Endless,
+            Story
+        }
+
+        private GameMode currentGameMode = GameMode.Endless;
+        private GameChallenge activeChallenge = null;
+        private bool isStoryVictory = false;
+
         private Label lblTutorialGuide;
+        private Button btnSkipTutorial;
         private int sessionGameInitialHighScore = 0;
         private bool isGameOver = false;
+        private int awakeningWaveStep = -1;
 
         public fGamePlay()
         {
@@ -52,42 +64,13 @@ namespace BlockBlast
             floatingTextTimer.Tick += FloatingTextTimer_Tick;
         }
 
-        private static string GetHighScoreFilePath()
-        {
-            string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            string folder = System.IO.Path.Combine(appData, "BlockBlast");
-            if (!System.IO.Directory.Exists(folder))
-            {
-                System.IO.Directory.CreateDirectory(folder);
-            }
-            return System.IO.Path.Combine(folder, "highscore.dat");
-        }
-
-        private void LoadSavedHighScore()
-        {
-            try
-            {
-                string path = GetHighScoreFilePath();
-                if (System.IO.File.Exists(path))
-                {
-                    string content = System.IO.File.ReadAllText(path);
-                    if (int.TryParse(content.Trim(), out int saved) && saved > 0)
-                    {
-                        gameManager.HighScore = saved;
-                    }
-                }
-            }
-            catch { }
-        }
-
+        // Quản lý điểm kỷ lục 100% qua UserManager (users_data.json)
         private void SaveHighScoreSilently()
         {
-            try
+            if (UserManager.CurrentUser != null)
             {
-                string path = GetHighScoreFilePath();
-                System.IO.File.WriteAllText(path, gameManager.HighScore.ToString());
+                UserManager.UpdateScore(gameManager.CurrentScore);
             }
-            catch { }
         }
 
         private static string GetSettingsFilePath()
@@ -122,81 +105,84 @@ namespace BlockBlast
 
         private void fGamePlay_Load(object sender, EventArgs e)
         {
-            LoadSavedHighScore();
-            sessionGameInitialHighScore = gameManager.HighScore;
-            LoadAudioSettings();
-            btnSound.Text = SoundManager.IsMuted ? "LOA: TẮT" : "LOA: BẬT";
-
-            if (btnReplay.Parent != pnlBoard)
+            try
             {
-                pnlBoard.Controls.Add(btnReplay);
-            }
-            btnReplay.Visible = false;
-            pnlGameOver.Visible = false;
+                UserManager.LoadUsers();
+                int userBest = (UserManager.CurrentUser != null) ? UserManager.CurrentUser.BestScore : 0;
+                gameManager.HighScore = userBest;
+                sessionGameInitialHighScore = userBest;
 
-            // 1. Khởi tạo Label hướng dẫn trước khi tính toán Layout
-            lblTutorialGuide = new Label
-            {
-                AutoSize = false,
-                TextAlign = ContentAlignment.MiddleCenter,
-                Font = new Font("Segoe UI", 12, FontStyle.Bold),
-                ForeColor = Color.FromArgb(255, 196, 77),
-                BackColor = Color.Transparent
-            };
-            this.Controls.Add(lblTutorialGuide);
-
-            // 2. Tính toán vị trí và bố cục hoàn hảo cho Bàn cờ, Dock và các control
-            LayoutGameControls();
-            this.Resize += (s, ev) =>
-            {
-                if (this.WindowState != FormWindowState.Minimized)
-                {
-                    LayoutGameControls();
-                }
-            };
-
-            // 3. Đăng ký sự kiện Mouse & Paint
-            // Paint/MouseDown/MouseMove của Dock, Paint của pnlBoard và MouseMove/MouseUp của Form
-            // đã được nối trong Designer -> KHÔNG đăng ký lại (tránh handler bị gọi 2 lần).
-            pnlBoard.MouseMove += fGamePlay_MouseMove;
-            pnlBoard.MouseUp += fGamePlay_MouseUp;
-            pnlDock.MouseMove += fGamePlay_MouseMove;
-            pnlDock.MouseUp += fGamePlay_MouseUp;
-            pnlHeader.MouseMove += fGamePlay_MouseMove;
-            pnlHeader.MouseUp += fGamePlay_MouseUp;
-
-            // Ô Dock giữ Mouse Capture suốt quá trình kéo nên MouseUp sẽ đến chính ô Dock đó
-            pnlDockPiece1.MouseUp += fGamePlay_MouseUp;
-            pnlDockPiece2.MouseUp += fGamePlay_MouseUp;
-            pnlDockPiece3.MouseUp += fGamePlay_MouseUp;
-
-            btnSound.Click += (s, ev) =>
-            {
-                SoundManager.IsMuted = !SoundManager.IsMuted;
-                SaveAudioSettingsSilently();
+                LoadAudioSettings();
                 btnSound.Text = SoundManager.IsMuted ? "LOA: TẮT" : "LOA: BẬT";
-            };
 
-            btnReplay.Click += btnReplay_Click;
-            btnPause.Click += btnPause_Click;
-            btnExit.Click += btnExit_Click;
+                if (btnReplay.Parent != pnlBoard)
+                {
+                    pnlBoard.Controls.Add(btnReplay);
+                }
+                btnReplay.Visible = false;
+                pnlGameOver.Visible = false;
 
-            // Mất focus (Alt+Tab...) giữa lúc kéo -> trả khối gạch về Dock
-            this.Deactivate += (s, ev) => CancelDrag();
-            this.FormClosed += fGamePlay_FormClosed;
+                // 1. Khởi tạo Label hướng dẫn & Banner trạng thái
+                lblTutorialGuide = new Label
+                {
+                    AutoSize = false,
+                    TextAlign = ContentAlignment.MiddleCenter,
+                    Font = new Font("Segoe UI", 12, FontStyle.Bold),
+                    ForeColor = Color.FromArgb(255, 196, 77),
+                    BackColor = Color.Transparent
+                };
+                this.Controls.Add(lblTutorialGuide);
 
-            ApplyModernTheme();
-            UpdateScoreLabels();
+                // Khởi tạo toàn bộ hệ thống Menu và Modal Popups
+                InitializeMenuAndModals();
 
-            // 4. Khởi tạo màn chơi
-            if (tutorialManager.IsTutorialActive)
-            {
-                LoadPuzzleLevel();
+                // 2. Tính toán vị trí và bố cục hoàn hảo cho Bàn cờ, Dock và các control
+                LayoutGameControls();
+                this.Resize += (s, ev) =>
+                {
+                    if (this.WindowState != FormWindowState.Minimized)
+                    {
+                        LayoutGameControls();
+                    }
+                };
+
+                // 3. Đăng ký sự kiện Mouse & Paint
+                pnlBoard.MouseMove += fGamePlay_MouseMove;
+                pnlBoard.MouseUp += fGamePlay_MouseUp;
+                pnlDock.MouseMove += fGamePlay_MouseMove;
+                pnlDock.MouseUp += fGamePlay_MouseUp;
+                pnlHeader.MouseMove += fGamePlay_MouseMove;
+                pnlHeader.MouseUp += fGamePlay_MouseUp;
+
+                pnlDockPiece1.MouseUp += fGamePlay_MouseUp;
+                pnlDockPiece2.MouseUp += fGamePlay_MouseUp;
+                pnlDockPiece3.MouseUp += fGamePlay_MouseUp;
+
+                btnSound.Click += (s, ev) =>
+                {
+                    SoundManager.IsMuted = !SoundManager.IsMuted;
+                    SaveAudioSettingsSilently();
+                    btnSound.Text = SoundManager.IsMuted ? "LOA: TẮT" : "LOA: BẬT";
+                };
+
+                btnReplay.Click += btnReplay_Click;
+                btnPause.Click += btnPause_Click;
+                btnExit.Click += btnExit_Click;
+
+                // Mất focus (Alt+Tab...) giữa lúc kéo -> trả khối gạch về Dock
+                this.Deactivate += (s, ev) => CancelDrag();
+                this.FormClosing += (s, ev) => SaveCurrentSessionSilently();
+                this.FormClosed += fGamePlay_FormClosed;
+
+                ApplyModernTheme();
+                UpdateScoreLabels();
+
+                // 4. Khởi động thẳng vào Màn hình Menu Chính (Không nạp tutorial hay gạch trước)
+                ShowMainMenu();
             }
-            else
+            catch (Exception ex)
             {
-                lblTutorialGuide.Visible = false;
-                GenerateNewPieces();
+                System.Diagnostics.Debug.WriteLine("Lỗi fGamePlay_Load: " + ex.Message);
             }
         }
 
@@ -218,8 +204,13 @@ namespace BlockBlast
             // Căn giữa nhãn hướng dẫn theo bàn cờ
             if (lblTutorialGuide != null)
             {
-                lblTutorialGuide.Size = new Size(pnlBoard.Width, 40);
-                lblTutorialGuide.Location = new Point(boardX, Math.Max(pnlHeader.Height + 5, boardY - 45));
+                lblTutorialGuide.Size = new Size(pnlBoard.Width + 200, 40);
+                lblTutorialGuide.Location = new Point(boardX - 100, Math.Max(pnlHeader.Height + 5, boardY - 45));
+            }
+
+            if (btnSkipTutorial != null && btnSkipTutorial.Visible)
+            {
+                btnSkipTutorial.Location = new Point((this.ClientSize.Width - btnSkipTutorial.Width) / 2, Math.Max(pnlHeader.Height + 6, boardY - 45));
             }
 
             // 2. Căn giữa 3 ô Dock trên thanh pnlDock
@@ -248,7 +239,14 @@ namespace BlockBlast
             btnReplay.Location = new Point((pnlBoard.Width - btnW) / 2, (int)(pnlBoard.Height * 0.60f));
             ApplyRoundedRegion(btnReplay, 14);
 
-            pnlGameOver.Visible = false;
+            if (btnHeaderSettings != null)
+            {
+                btnHeaderSettings.Size = new Size(140, 46);
+                btnHeaderSettings.Location = new Point(pnlHeader.ClientSize.Width - btnHeaderSettings.Width - 25, (pnlHeader.ClientSize.Height - btnHeaderSettings.Height) / 2);
+                ApplyRoundedRegion(btnHeaderSettings, 12);
+            }
+
+            LayoutMenuModals();
         }
 
         private void fGamePlay_FormClosed(object sender, FormClosedEventArgs e)
@@ -264,6 +262,11 @@ namespace BlockBlast
 
         private void ApplyModernTheme()
         {
+            btnSound.Visible = false;
+            btnPause.Visible = false;
+            btnExit.Visible = false;
+            if (btnHeaderSettings != null) btnHeaderSettings.Visible = true;
+
             foreach (Button btn in new[] { btnSound, btnPause, btnExit, btnReplay })
             {
                 btn.Cursor = Cursors.Hand;
@@ -281,6 +284,7 @@ namespace BlockBlast
 
         private static void ApplyRoundedRegion(Control control, int radius)
         {
+            if (control == null || control.Width <= 0 || control.Height <= 0) return;
             using (GraphicsPath path = BoardRenderer.CreateRoundedPath(new Rectangle(0, 0, control.Width, control.Height), radius))
             {
                 control.Region = new Region(path);
@@ -311,7 +315,344 @@ namespace BlockBlast
         private void UpdateScoreLabels()
         {
             lblScore.Text = gameManager.CurrentScore.ToString();
-            lblBestScore.Text = gameManager.HighScore.ToString();
+            int userBest = (UserManager.CurrentUser != null) ? UserManager.CurrentUser.BestScore : 0;
+            gameManager.HighScore = userBest;
+            lblBestScore.Text = userBest.ToString();
+        }
+
+        private void UpdateStatusBanner()
+        {
+            try
+            {
+                if (lblTutorialGuide == null) return;
+                if (tutorialManager.IsTutorialActive) return;
+
+                if (currentGameMode == GameMode.Story && activeChallenge != null)
+                {
+                    int percent = (int)(activeChallenge.ProgressRatio * 100);
+                    int totalBars = 6;
+                    int filledBars = (int)(activeChallenge.ProgressRatio * totalBars);
+                    string barStr = new string('■', filledBars) + new string('□', totalBars - filledBars);
+                    lblTutorialGuide.Text = $"{activeChallenge.Icon} MÙA {activeChallenge.SeasonId}-MÀN {activeChallenge.LevelId}  [{barStr} {percent}%]  |  🎯 MỤC TIÊU: {activeChallenge.LinesCleared}/{activeChallenge.TargetLines} DÒNG  |  ⏱ NƯỚC ĐI: {activeChallenge.MovesLeft}";
+                    lblTutorialGuide.ForeColor = activeChallenge.AccentColor;
+                    lblTutorialGuide.Visible = true;
+                }
+                else
+                {
+                    int ddaLevel = 1 + (gameManager.CurrentScore / 400);
+                    string userName = UserManager.CurrentUser != null ? UserManager.CurrentUser.Username : "Player 1";
+                    lblTutorialGuide.Text = $"🔥 CHẾ ĐỘ TỰ DO (DDA CẤP {ddaLevel})  |  👤 NGƯỜI CHƠI: {userName}";
+                    lblTutorialGuide.ForeColor = Color.FromArgb(255, 196, 77);
+                    lblTutorialGuide.Visible = true;
+                }
+            }
+            catch { }
+        }
+
+        public void StartEndlessMode()
+        {
+            try
+            {
+                currentGameMode = GameMode.Endless;
+                activeChallenge = null;
+                ResumeGameplayUI();
+
+                // Luồng tân thủ: Nếu người chơi có BestScore == 0 -> Vào Tutorial kèm nút Bỏ Qua
+                if (UserManager.CurrentUser != null && UserManager.CurrentUser.BestScore == 0)
+                {
+                    tutorialManager.StartTutorial();
+                    LoadPuzzleLevel();
+                    ShowSkipTutorialButton();
+                }
+                else
+                {
+                    if (btnSkipTutorial != null) btnSkipTutorial.Visible = false;
+                    RestartEndlessGame();
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("Lỗi StartEndlessMode: " + ex.Message);
+            }
+        }
+
+        private void ShowSkipTutorialButton()
+        {
+            if (btnSkipTutorial == null)
+            {
+                btnSkipTutorial = new Button
+                {
+                    Text = "⏩ BỎ QUA HƯỚNG DẪN (SKIP)",
+                    Size = new Size(240, 38),
+                    BackColor = Color.FromArgb(238, 82, 83),
+                    ForeColor = Color.White,
+                    FlatStyle = FlatStyle.Flat,
+                    Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+                    Cursor = Cursors.Hand
+                };
+                btnSkipTutorial.FlatAppearance.BorderSize = 0;
+                btnSkipTutorial.Click += (s, e) => SkipTutorial();
+                this.Controls.Add(btnSkipTutorial);
+                ApplyRoundedRegion(btnSkipTutorial, 10);
+            }
+
+            int boardX = (this.ClientSize.Width - pnlBoard.Width) / 2;
+            int availableHeight = this.ClientSize.Height - pnlHeader.Height - pnlDock.Height;
+            int boardY = pnlHeader.Height + (availableHeight - pnlBoard.Height) / 2;
+            btnSkipTutorial.Location = new Point((this.ClientSize.Width - btnSkipTutorial.Width) / 2, Math.Max(pnlHeader.Height + 6, boardY - 45));
+            btnSkipTutorial.Visible = true;
+            btnSkipTutorial.BringToFront();
+        }
+
+        private void SkipTutorial()
+        {
+            tutorialManager.EndTutorial();
+            if (btnSkipTutorial != null) btnSkipTutorial.Visible = false;
+            if (lblTutorialGuide != null) lblTutorialGuide.Visible = false;
+            RestartEndlessGame();
+        }
+
+        private void RestartEndlessGame()
+        {
+            CancelDrag();
+            isGameOver = false;
+            isStoryVictory = false;
+            btnReplay.Visible = false;
+            pnlGameOver.Visible = false;
+            if (btnSkipTutorial != null) btnSkipTutorial.Visible = false;
+
+            gameManager.ResetGame();
+            gameManager.Board.Clear();
+            gameManager.IsPaused = false;
+            btnPause.Text = "Tam Dung";
+            sessionGameInitialHighScore = (UserManager.CurrentUser != null) ? UserManager.CurrentUser.BestScore : 0;
+
+            floatingTextTimer.Stop();
+            floatingTextAlpha = 0f;
+            floatingComboText = "";
+
+            UpdateScoreLabels();
+            GenerateNewPieces();
+            UpdateStatusBanner();
+            pnlBoard.Invalidate();
+
+            SaveCurrentSessionSilently();
+        }
+
+        public async void StartChallenge(int seasonId, int levelId)
+        {
+            try
+            {
+                currentGameMode = GameMode.Story;
+                activeChallenge = SeasonManager.GetChallenge(seasonId, levelId);
+                activeChallenge.ResetProgress();
+
+                ResumeGameplayUI();
+                btnReplay.Visible = false;
+                pnlGameOver.Visible = false;
+                if (btnSkipTutorial != null) btnSkipTutorial.Visible = false;
+
+                gameManager.ResetGame();
+                gameManager.Board.Clear();
+                gameManager.IsPaused = false;
+                btnPause.Text = "Tam Dung";
+
+                if (activeChallenge.InitialBoard != null)
+                {
+                    gameManager.Board.SetGrid(activeChallenge.InitialBoard);
+                }
+
+                floatingTextTimer.Stop();
+                floatingTextAlpha = 0f;
+                floatingComboText = "";
+
+                UpdateScoreLabels();
+                GenerateNewPieces();
+                UpdateStatusBanner();
+                pnlBoard.Invalidate();
+
+                SaveCurrentSessionSilently();
+
+                // Kích hoạt Hiệu ứng Sóng Năng Lượng Thức Tỉnh (Awakening Wave Pulse)
+                await TriggerAwakeningWaveAsync(activeChallenge.AccentColor);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("Lỗi StartChallenge: " + ex.Message);
+            }
+        }
+
+        public void StartStoryChapter(int chapterNum)
+        {
+            StartChallenge(1, chapterNum);
+        }
+
+        private async Task TriggerAwakeningWaveAsync(Color accentColor)
+        {
+            try
+            {
+                isProcessingMove = true;
+                SoundManager.PlayPickup();
+
+                for (int step = 0; step < 5; step++)
+                {
+                    awakeningWaveStep = step;
+                    pnlBoard.Invalidate();
+                    await Task.Delay(65);
+                }
+                awakeningWaveStep = -1;
+                pnlBoard.Invalidate();
+                SoundManager.PlayLineClear(1);
+            }
+            catch { }
+            finally
+            {
+                isProcessingMove = false;
+            }
+        }
+
+        public void SaveCurrentSessionSilently()
+        {
+            try
+            {
+                if (isGameOver || tutorialManager.IsTutorialActive)
+                {
+                    SessionPersistence.ClearSession();
+                    return;
+                }
+
+                int[,] grid = gameManager.Board.GetGrid();
+                int[][] jagged = new int[8][];
+                for (int r = 0; r < 8; r++)
+                {
+                    jagged[r] = new int[8];
+                    for (int c = 0; c < 8; c++) jagged[r][c] = grid[r, c];
+                }
+
+                var pieceDtos = new DockPieceStateDto[3];
+                Panel[] dockPanels = { pnlDockPiece1, pnlDockPiece2, pnlDockPiece3 };
+                for (int i = 0; i < 3; i++)
+                {
+                    var pnl = dockPanels[i];
+                    if (pnl.Tag is BlockPiece piece)
+                    {
+                        int rows = piece.Shape.GetLength(0);
+                        int cols = piece.Shape.GetLength(1);
+                        int[][] sJag = new int[rows][];
+                        for (int r = 0; r < rows; r++)
+                        {
+                            sJag[r] = new int[cols];
+                            for (int c = 0; c < cols; c++) sJag[r][c] = piece.Shape[r, c];
+                        }
+                        pieceDtos[i] = new DockPieceStateDto { Shape = sJag, ColorIndex = piece.ColorIndex, IsPlaced = false };
+                    }
+                    else
+                    {
+                        pieceDtos[i] = new DockPieceStateDto { IsPlaced = true };
+                    }
+                }
+
+                var session = new GameSessionDto
+                {
+                    IsActive = true,
+                    GameMode = (currentGameMode == GameMode.Story) ? "Challenge" : "Endless",
+                    Score = gameManager.CurrentScore,
+                    ComboCount = gameManager.ComboCount,
+                    BoardGrid = jagged,
+                    Pieces = pieceDtos,
+                    SeasonId = (activeChallenge != null) ? activeChallenge.SeasonId : 1,
+                    LevelId = (activeChallenge != null) ? activeChallenge.LevelId : 1,
+                    TargetLines = (activeChallenge != null) ? activeChallenge.TargetLines : 0,
+                    LinesCleared = (activeChallenge != null) ? activeChallenge.LinesCleared : 0,
+                    MovesLeft = (activeChallenge != null) ? activeChallenge.MovesLeft : 0
+                };
+
+                SessionPersistence.SaveSession(session);
+            }
+            catch { }
+        }
+
+        public void ResumeSavedGame()
+        {
+            try
+            {
+                if (!SessionPersistence.HasSavedSession()) return;
+                var session = SessionPersistence.LoadSession();
+                if (session == null || session.BoardGrid == null) return;
+
+                CancelDrag();
+                isGameOver = false;
+                isStoryVictory = false;
+                btnReplay.Visible = false;
+                pnlGameOver.Visible = false;
+                if (btnSkipTutorial != null) btnSkipTutorial.Visible = false;
+
+                // 1. Khôi phục ma trận bàn cờ
+                int[,] grid = new int[8, 8];
+                for (int r = 0; r < 8; r++)
+                {
+                    for (int c = 0; c < 8; c++)
+                    {
+                        grid[r, c] = session.BoardGrid[r][c];
+                    }
+                }
+                gameManager.Board.SetGrid(grid);
+                gameManager.CurrentScore = session.Score;
+                gameManager.ComboCount = session.ComboCount;
+                gameManager.IsPaused = false;
+                btnPause.Text = "Tam Dung";
+
+                // 2. Khôi phục 3 ô gạch ở Dock
+                Panel[] dockPanels = { pnlDockPiece1, pnlDockPiece2, pnlDockPiece3 };
+                for (int i = 0; i < 3; i++)
+                {
+                    var pnl = dockPanels[i];
+                    if (session.Pieces != null && i < session.Pieces.Length && !session.Pieces[i].IsPlaced && session.Pieces[i].Shape != null)
+                    {
+                        var pDto = session.Pieces[i];
+                        int rows = pDto.Shape.Length;
+                        int cols = pDto.Shape[0].Length;
+                        int[,] shape2D = new int[rows, cols];
+                        for (int r = 0; r < rows; r++)
+                            for (int c = 0; c < cols; c++)
+                                shape2D[r, c] = pDto.Shape[r][c];
+
+                        pnl.Tag = new BlockPiece(shape2D, pDto.ColorIndex);
+                        pnl.Visible = true;
+                        pnl.Invalidate();
+                    }
+                    else
+                    {
+                        pnl.Tag = null;
+                        pnl.Visible = true;
+                        pnl.Invalidate();
+                    }
+                }
+
+                // 3. Khôi phục chế độ
+                if (session.GameMode == "Challenge")
+                {
+                    currentGameMode = GameMode.Story;
+                    activeChallenge = SeasonManager.GetChallenge(session.SeasonId, session.LevelId);
+                    activeChallenge.LinesCleared = session.LinesCleared;
+                    activeChallenge.MovesLeft = session.MovesLeft;
+                }
+                else
+                {
+                    currentGameMode = GameMode.Endless;
+                    activeChallenge = null;
+                }
+
+                ResumeGameplayUI();
+                UpdateScoreLabels();
+                UpdateStatusBanner();
+                pnlBoard.Invalidate();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("Lỗi khôi phục ván đấu: " + ex.Message);
+                RestartEndlessGame();
+            }
         }
 
         // ================================================================
@@ -349,14 +690,15 @@ namespace BlockBlast
 
         private void GenerateNewPieces()
         {
-            SetupDockPiece(pnlDockPiece1);
-            SetupDockPiece(pnlDockPiece2);
-            SetupDockPiece(pnlDockPiece3);
+            int diff = (currentGameMode == GameMode.Story && activeChallenge != null) ? activeChallenge.SeasonId : (1 + gameManager.CurrentScore / 400);
+            SetupDockPiece(pnlDockPiece1, diff);
+            SetupDockPiece(pnlDockPiece2, diff);
+            SetupDockPiece(pnlDockPiece3, diff);
         }
 
-        private void SetupDockPiece(Panel dockPanel)
+        private void SetupDockPiece(Panel dockPanel, int difficulty = 1)
         {
-            dockPanel.Tag = gameManager.CreateRandomPiece();
+            dockPanel.Tag = gameManager.CreateRandomPiece(difficulty);
             dockPanel.Visible = true;
             dockPanel.Invalidate();
         }
@@ -367,6 +709,8 @@ namespace BlockBlast
 
         private void pnlBoard_Paint(object sender, PaintEventArgs e)
         {
+            Color? themeColor = (currentGameMode == GameMode.Story && activeChallenge != null) ? (Color?)activeChallenge.AccentColor : null;
+
             BoardRenderer.RenderBoard(
                 e.Graphics,
                 pnlBoard.Size,
@@ -376,7 +720,9 @@ namespace BlockBlast
                 hoverRow,
                 hoverCol,
                 flashingCells,
-                flashScale
+                flashScale,
+                awakeningWaveStep,
+                themeColor
             );
 
             if (floatingTextAlpha > 0f)
@@ -384,7 +730,7 @@ namespace BlockBlast
                 BoardRenderer.RenderFloatingText(e.Graphics, floatingComboText, floatingTextPos, floatingTextAlpha);
             }
 
-            if (gameManager.IsPaused)
+            if (gameManager.IsPaused && (pnlSettingsModal == null || !pnlSettingsModal.Visible))
             {
                 BoardRenderer.RenderPausedOverlay(e.Graphics, pnlBoard.Size);
             }
@@ -393,7 +739,22 @@ namespace BlockBlast
             {
                 int current = gameManager.CurrentScore;
                 bool isNewRecord = current > sessionGameInitialHighScore && current > 0;
-                BoardRenderer.RenderGameOverOverlay(e.Graphics, pnlBoard.Size, current, gameManager.HighScore, isNewRecord);
+                if (currentGameMode == GameMode.Story && activeChallenge != null)
+                {
+                    if (isStoryVictory)
+                    {
+                        BoardRenderer.RenderGameOverOverlay(e.Graphics, pnlBoard.Size, current, gameManager.HighScore, false, "CHIẾN THẮNG!", $"ĐÃ HOÀN THÀNH {activeChallenge.LinesCleared}/{activeChallenge.TargetLines} DÒNG");
+                    }
+                    else
+                    {
+                        string reason = activeChallenge.IsOutOfMoves ? "HẾT NƯỚC ĐI" : "HẾT Ô ĐẶT GẠCH";
+                        BoardRenderer.RenderGameOverOverlay(e.Graphics, pnlBoard.Size, current, gameManager.HighScore, false, "THẤT BẠI", $"{reason} ({activeChallenge.LinesCleared}/{activeChallenge.TargetLines} DÒNG)");
+                    }
+                }
+                else
+                {
+                    BoardRenderer.RenderGameOverOverlay(e.Graphics, pnlBoard.Size, current, gameManager.HighScore, isNewRecord);
+                }
             }
         }
 
@@ -515,6 +876,11 @@ namespace BlockBlast
                 gameManager.Board.PlaceShape(shapeToPlace, colorToPlace, targetRow, targetCol);
                 SoundManager.PlayDrop();
 
+                if (currentGameMode == GameMode.Story && activeChallenge != null)
+                {
+                    activeChallenge.RecordMove();
+                }
+
                 if (currentDock != null)
                 {
                     currentDock.Tag = null;
@@ -526,7 +892,7 @@ namespace BlockBlast
                 // 2. Nổ hàng/cột (chớp sáng, rung, chữ nổi) và cộng điểm
                 if (!await AnimateLineClearAsync()) return;
 
-                // 3. Chuyển màn Tutorial / Game Thường
+                // 3. Chuyển màn Tutorial / Story / Endless
                 if (tutorialManager.IsTutorialActive)
                 {
                     if (tutorialManager.NextLevel())
@@ -538,6 +904,7 @@ namespace BlockBlast
                     {
                         // HOÀN THÀNH TUTORIAL
                         if (lblTutorialGuide != null) lblTutorialGuide.Visible = false;
+                        if (btnSkipTutorial != null) btnSkipTutorial.Visible = false;
 
                         if (!await DelayAsync(300)) return;
 
@@ -550,13 +917,49 @@ namespace BlockBlast
                         pnlBoard.Invalidate();
                     }
                 }
-                else
+                else if (currentGameMode == GameMode.Story && activeChallenge != null)
                 {
+                    UpdateStatusBanner();
+
+                    if (activeChallenge.IsTargetReached)
+                    {
+                        // CHIẾN THẮNG MÀN THỬ THÁCH!
+                        isStoryVictory = true;
+                        UserManager.RecordChallengeVictory(activeChallenge.SeasonId, activeChallenge.LevelId);
+                        SessionPersistence.ClearSession();
+                        SoundManager.PlayLineClear(4);
+                        ShowStoryVictoryModal(activeChallenge);
+                        return;
+                    }
+                    else if (activeChallenge.IsOutOfMoves)
+                    {
+                        // HẾT NƯỚC ĐI -> THUA CUỘC
+                        isStoryVictory = false;
+                        SessionPersistence.ClearSession();
+                        ShowStoryDefeatModal(activeChallenge, "Hết số nước đi cho phép");
+                        return;
+                    }
+
                     if (pnlDockPiece1.Tag == null && pnlDockPiece2.Tag == null && pnlDockPiece3.Tag == null)
                     {
                         GenerateNewPieces();
                     }
                     CheckGameOver();
+                    SaveCurrentSessionSilently();
+                }
+                else
+                {
+                    // CHẾ ĐỘ TỰ DO (ENDLESS DDA)
+                    UserManager.RecordGameStats(gameManager.CurrentScore, 0, gameManager.ComboCount);
+                    UpdateScoreLabels();
+                    UpdateStatusBanner();
+
+                    if (pnlDockPiece1.Tag == null && pnlDockPiece2.Tag == null && pnlDockPiece3.Tag == null)
+                    {
+                        GenerateNewPieces();
+                    }
+                    CheckGameOver();
+                    SaveCurrentSessionSilently();
                 }
             }
             finally
@@ -630,6 +1033,11 @@ namespace BlockBlast
             int linesCleared = fullRows.Count + fullCols.Count;
             if (linesCleared == 0) return true;
 
+            if (currentGameMode == GameMode.Story && activeChallenge != null)
+            {
+                activeChallenge.AddClearedLines(linesCleared);
+            }
+
             int scoreGained = GameBoard.CalculateLineScore(linesCleared);
 
             // a. Chớp sáng trắng
@@ -664,7 +1072,9 @@ namespace BlockBlast
 
             gameManager.AddScore(scoreGained);
             SaveHighScoreSilently();
+            UserManager.RecordGameStats(gameManager.CurrentScore, linesCleared, gameManager.ComboCount);
             UpdateScoreLabels();
+            UpdateStatusBanner();
             pnlBoard.Refresh();
             return true;
         }
@@ -689,8 +1099,17 @@ namespace BlockBlast
             return true;
         }
 
-        private static string BuildComboText(int linesCleared, int scoreGained)
+        private string BuildComboText(int linesCleared, int scoreGained)
         {
+            if (currentGameMode == GameMode.Story && activeChallenge != null)
+            {
+                if (linesCleared >= 2)
+                {
+                    return $"{activeChallenge.BlastFloatingText}\n+{scoreGained} (x{linesCleared})";
+                }
+                return $"{activeChallenge.BlastFloatingText}\n+{scoreGained}";
+            }
+
             if (linesCleared >= 4) return "MEGA BLAST!\n+" + scoreGained;
             if (scoreGained >= 200) return "COMBO x" + linesCleared + "!\n+" + scoreGained;
             return "+" + scoreGained;
@@ -773,11 +1192,31 @@ namespace BlockBlast
         {
             CancelDrag();
             isGameOver = true;
+            SessionPersistence.ClearSession();
+
             int current = gameManager.CurrentScore;
             if (current > gameManager.HighScore) gameManager.HighScore = current;
             SaveHighScoreSilently();
+            UserManager.RecordGameStats(current, 0, gameManager.ComboCount);
             UpdateScoreLabels();
+
+            if (currentGameMode == GameMode.Story && activeChallenge != null)
+            {
+                if (isStoryVictory)
+                {
+                    ShowStoryVictoryModal(activeChallenge);
+                }
+                else
+                {
+                    string reason = activeChallenge.IsOutOfMoves ? "Hết số nước đi cho phép" : "Không còn vị trí hợp lệ để đặt các khối gạch";
+                    ShowStoryDefeatModal(activeChallenge, reason);
+                }
+                return;
+            }
+
+            btnReplay.Text = "▶ CHƠI LẠI";
             SoundManager.PlayGameOver();
+
             pnlGameOver.Visible = false;
             btnReplay.Visible = true;
             btnReplay.BringToFront();
@@ -789,22 +1228,32 @@ namespace BlockBlast
             if (isProcessingMove) return;
             CancelDrag();
 
-            isGameOver = false;
-            btnReplay.Visible = false;
-            pnlGameOver.Visible = false;
-            gameManager.ResetGame();
-            gameManager.IsPaused = false;
-            btnPause.Text = "Tam Dung";
-            sessionGameInitialHighScore = gameManager.HighScore;
-
-            floatingTextTimer.Stop();
-            floatingTextAlpha = 0f;
-            floatingComboText = "";
-
-            lblScore.Text = "0";
-            UpdateScoreLabels();
-            GenerateNewPieces();
-            pnlBoard.Invalidate();
+            if (currentGameMode == GameMode.Story && activeChallenge != null)
+            {
+                if (isStoryVictory)
+                {
+                    if (activeChallenge.LevelId < SeasonManager.LEVELS_PER_SEASON)
+                    {
+                        StartChallenge(activeChallenge.SeasonId, activeChallenge.LevelId + 1);
+                    }
+                    else if (activeChallenge.SeasonId < SeasonManager.TOTAL_SEASONS)
+                    {
+                        StartChallenge(activeChallenge.SeasonId + 1, 1);
+                    }
+                    else
+                    {
+                        StartChallenge(activeChallenge.SeasonId, activeChallenge.LevelId);
+                    }
+                }
+                else
+                {
+                    StartChallenge(activeChallenge.SeasonId, activeChallenge.LevelId);
+                }
+            }
+            else
+            {
+                RestartEndlessGame();
+            }
         }
 
         private void btnPause_Click(object sender, EventArgs e)
@@ -818,8 +1267,9 @@ namespace BlockBlast
         private void btnExit_Click(object sender, EventArgs e)
         {
             CancelDrag();
+            SaveCurrentSessionSilently();
             DialogResult result = MessageBox.Show(
-                "Bạn có chắc chắn muốn thoát game không?",
+                "Bạn có chắc chắn muốn thoát game không?\n(Ván đấu dở dang đã được tự động lưu lại)",
                 "Xác nhận thoát",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question);

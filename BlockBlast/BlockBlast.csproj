@@ -44,6 +44,7 @@
     <Reference Include="System.Net.Http" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml" />
+    <Reference Include="System.Web.Extensions" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="FormGamePlay.cs">
@@ -51,6 +52,10 @@
     </Compile>
     <Compile Include="FormGamePlay.Designer.cs">
       <DependentUpon>FormGamePlay.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FormGamePlay.MenuModals.cs">
+      <DependentUpon>FormGamePlay.cs</DependentUpon>
+      <SubType>Form</SubType>
     </Compile>
     <Compile Include="Module\BlockPiece.cs" />
     <Compile Include="Module\BoardRenderer.cs" />
@@ -64,6 +69,13 @@
     <Compile Include="Module\GameManager.cs" />
     <Compile Include="Module\TutorialManager.cs" />
     <Compile Include="Module\SoundManager.cs" />
+    <Compile Include="Module\UserManager.cs" />
+    <Compile Include="Module\DDAEngine.cs" />
+    <Compile Include="Module\StoryManager.cs" />
+    <Compile Include="Module\GameChallenge.cs" />
+    <Compile Include="Module\InverseChallengeGenerator.cs" />
+    <Compile Include="Module\SeasonManager.cs" />
+    <Compile Include="Module\SessionPersistence.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <EmbeddedResource Include="FormGamePlay.resx">
