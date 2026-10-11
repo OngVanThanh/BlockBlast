@@ -239,11 +239,11 @@ namespace BlockBlast
             btnReplay.Location = new Point((pnlBoard.Width - btnW) / 2, (int)(pnlBoard.Height * 0.60f));
             ApplyRoundedRegion(btnReplay, 14);
 
-            if (btnHeaderMenu != null && btnSound != null)
+            if (btnHeaderSettings != null)
             {
-                btnHeaderMenu.Size = new Size(130, 45);
-                btnHeaderMenu.Location = new Point(btnSound.Location.X - btnHeaderMenu.Width - 12, btnSound.Location.Y);
-                ApplyRoundedRegion(btnHeaderMenu, 12);
+                btnHeaderSettings.Size = new Size(140, 46);
+                btnHeaderSettings.Location = new Point(pnlHeader.ClientSize.Width - btnHeaderSettings.Width - 25, (pnlHeader.ClientSize.Height - btnHeaderSettings.Height) / 2);
+                ApplyRoundedRegion(btnHeaderSettings, 12);
             }
 
             LayoutMenuModals();
@@ -262,6 +262,11 @@ namespace BlockBlast
 
         private void ApplyModernTheme()
         {
+            btnSound.Visible = false;
+            btnPause.Visible = false;
+            btnExit.Visible = false;
+            if (btnHeaderSettings != null) btnHeaderSettings.Visible = true;
+
             foreach (Button btn in new[] { btnSound, btnPause, btnExit, btnReplay })
             {
                 btn.Cursor = Cursors.Hand;
@@ -279,6 +284,7 @@ namespace BlockBlast
 
         private static void ApplyRoundedRegion(Control control, int radius)
         {
+            if (control == null || control.Width <= 0 || control.Height <= 0) return;
             using (GraphicsPath path = BoardRenderer.CreateRoundedPath(new Rectangle(0, 0, control.Width, control.Height), radius))
             {
                 control.Region = new Region(path);
@@ -724,7 +730,7 @@ namespace BlockBlast
                 BoardRenderer.RenderFloatingText(e.Graphics, floatingComboText, floatingTextPos, floatingTextAlpha);
             }
 
-            if (gameManager.IsPaused)
+            if (gameManager.IsPaused && (pnlSettingsModal == null || !pnlSettingsModal.Visible))
             {
                 BoardRenderer.RenderPausedOverlay(e.Graphics, pnlBoard.Size);
             }

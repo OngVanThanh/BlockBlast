@@ -23,7 +23,16 @@ namespace BlockBlast
         private Panel pnlStoryDefeatModal;
 
         private Button btnResumeGame;
-        private Button btnHeaderMenu;
+        private Button btnHeaderSettings;
+        private Panel pnlSettingsModal;
+        private Label lblSettingsStatusTitle;
+        private Label lblSettingsStatusDetail;
+        private Button btnSettingsAudio;
+        private Button btnPlayEndless;
+        private Button btnPlayStory;
+        private Button btnLeaderboard;
+        private Button btnAbout;
+        private Button btnExitMenu;
         private Label lblUserCardName;
         private Label lblUserCardStats;
         private TextBox txtNewUserName;
@@ -78,31 +87,34 @@ namespace BlockBlast
         {
             try
             {
-                // 1. Thêm nút [🏠 MENU] vào thanh pnlHeader
-                btnHeaderMenu = new Button
+                // 1. Thêm nút [⚙️ CÀI ĐẶT] duy nhất vào thanh pnlHeader
+                btnHeaderSettings = new Button
                 {
-                    Text = "🏠 MENU",
-                    Size = new Size(130, 45),
+                    Text = "⚙️ CÀI ĐẶT",
+                    Size = new Size(140, 46),
                     Anchor = AnchorStyles.Top | AnchorStyles.Right,
-                    BackColor = Color.FromArgb(40, 45, 66),
-                    ForeColor = Color.White,
+                    BackColor = Color.FromArgb(38, 43, 64),
+                    ForeColor = Color.FromArgb(255, 196, 77),
                     FlatStyle = FlatStyle.Flat,
                     Font = new Font("Segoe UI", 12f, FontStyle.Bold),
                     Cursor = Cursors.Hand
                 };
-                btnHeaderMenu.FlatAppearance.BorderSize = 0;
-                btnHeaderMenu.FlatAppearance.MouseOverBackColor = Color.FromArgb(55, 62, 92);
-                btnHeaderMenu.Click += (s, e) =>
+                btnHeaderSettings.FlatAppearance.BorderSize = 0;
+                btnHeaderSettings.FlatAppearance.MouseOverBackColor = Color.FromArgb(52, 59, 88);
+                btnHeaderSettings.Click += (s, e) =>
                 {
                     CancelDrag();
-                    SaveCurrentSessionSilently();
-                    ShowMainMenu();
+                    ShowSettingsModal();
                 };
-                pnlHeader.Controls.Add(btnHeaderMenu);
-                ApplyRoundedRegion(btnHeaderMenu, 12);
+                pnlHeader.Controls.Add(btnHeaderSettings);
+                btnHeaderSettings.SizeChanged += (s, e) => ApplyRoundedRegion(btnHeaderSettings, 12);
+                ApplyRoundedRegion(btnHeaderSettings, 12);
 
                 // 2. Xây dựng Main Menu Overlay
                 BuildMainMenuOverlay();
+
+                // 2b. Xây dựng Modal Cài Đặt & Tạm Dừng trong game
+                BuildSettingsModal();
 
                 // 3. Xây dựng Modal Nhật Ký Thành Tích & Huân Chương 2 Tab
                 BuildAchievementJournalModal();
@@ -223,38 +235,29 @@ namespace BlockBlast
             pnlUserCard.Controls.Add(btnSwitchUser);
 
             // Nút [▶ TIẾP TỤC VÁN CHƠI] (hiện nổi bật khi có ván đấu dở dang)
-            btnResumeGame = CreateMenuButton("▶  TIẾP TỤC VÁN CHƠI DỞ DANG", Color.FromArgb(16, 172, 132), Color.White, new Point(40, 185));
-            btnResumeGame.Size = new Size(480, 48);
+            btnResumeGame = CreateMenuButton("▶  TIẾP TỤC VÁN CHƠI DỞ DANG", Color.FromArgb(16, 172, 132), Color.White, new Point(40, 184), new Size(480, 50));
             btnResumeGame.Visible = false;
             btnResumeGame.Click += (s, e) => ResumeSavedGame();
 
-            int btnY = 242;
-            int btnSpacing = 58;
-
             // 1. CHƠI TỰ DO (ENDLESS DDA): Cam neon #FF9F43
-            Button btnPlayEndless = CreateMenuButton("⚡  CHƠI TỰ DO (ENDLESS DDA)", Color.FromArgb(255, 159, 67), Color.White, new Point(40, btnY));
-            btnPlayEndless.Size = new Size(480, 48);
+            btnPlayEndless = CreateMenuButton("⚡  CHƠI TỰ DO (ENDLESS DDA)", Color.FromArgb(255, 159, 67), Color.White, new Point(40, 240), new Size(480, 50));
             btnPlayEndless.Click += (s, e) => StartEndlessMode();
 
             // 2. 8 ĐẠI MÙA SỬ THI (96 MÀN CHƠI): Xanh dương #54A0FF
-            Button btnPlayStory = CreateMenuButton("🌟  8 ĐẠI MÙA SỬ THI (96 THỬ THÁCH)", Color.FromArgb(84, 160, 255), Color.White, new Point(40, btnY + btnSpacing));
-            btnPlayStory.Size = new Size(480, 48);
+            btnPlayStory = CreateMenuButton("🌟  8 ĐẠI MÙA SỬ THI (96 THỬ THÁCH)", Color.FromArgb(84, 160, 255), Color.White, new Point(40, 296), new Size(480, 50));
             btnPlayStory.Click += (s, e) => ShowStorySelectModal();
 
             // 3. NHẬT KÝ THÀNH TÍCH & BẢO TÀNG HUÂN CHƯƠNG: Xám tím #383E58, chữ vàng #FFC44D
-            Button btnLeaderboard = CreateMenuButton("🎖️  NHẬT KÝ THÀNH TÍCH (2 TAB)", Color.FromArgb(56, 62, 88), Color.FromArgb(255, 196, 77), new Point(40, btnY + btnSpacing * 2));
-            btnLeaderboard.Size = new Size(480, 48);
+            btnLeaderboard = CreateMenuButton("🎖️  NHẬT KÝ THÀNH TÍCH (2 TAB)", Color.FromArgb(56, 62, 88), Color.FromArgb(255, 196, 77), new Point(40, 352), new Size(480, 50));
             btnLeaderboard.Click += (s, e) => ShowLeaderboardModal();
 
             // 4. HƯỚNG DẪN & NHÓM TÁC GIẢ: Xám tối #2B3046, chữ trắng
-            Button btnAbout = CreateMenuButton("ℹ️  HƯỚNG DẪN & NHÓM TÁC GIẢ", Color.FromArgb(43, 48, 70), Color.White, new Point(40, btnY + btnSpacing * 3));
-            btnAbout.Size = new Size(480, 48);
+            btnAbout = CreateMenuButton("ℹ️  HƯỚNG DẪN & NHÓM TÁC GIẢ", Color.FromArgb(43, 48, 70), Color.White, new Point(40, 408), new Size(480, 50));
             btnAbout.Click += (s, e) => ShowAboutModal();
 
             // 5. THOÁT TRÒ CHƠI: Xám viền đỏ #24283A, chữ đỏ #EE5253
-            Button btnExit = CreateMenuButton("❌  THOÁT TRÒ CHƠI", Color.FromArgb(36, 40, 58), Color.FromArgb(238, 82, 83), new Point(40, btnY + btnSpacing * 4));
-            btnExit.Size = new Size(480, 48);
-            btnExit.Click += (s, e) => btnExit_Click(s, e);
+            btnExitMenu = CreateMenuButton("❌  THOÁT TRÒ CHƠI", Color.FromArgb(36, 40, 58), Color.FromArgb(238, 82, 83), new Point(40, 464), new Size(480, 50));
+            btnExitMenu.Click += (s, e) => btnExit_Click(s, e);
 
             Label lblFooter = new Label
             {
@@ -263,7 +266,7 @@ namespace BlockBlast
                 ForeColor = Color.FromArgb(90, 95, 120),
                 TextAlign = ContentAlignment.MiddleCenter,
                 Size = new Size(540, 20),
-                Location = new Point(10, 654)
+                Location = new Point(10, 642)
             };
 
             card.Controls.Add(lblTitle);
@@ -274,19 +277,50 @@ namespace BlockBlast
             card.Controls.Add(btnPlayStory);
             card.Controls.Add(btnLeaderboard);
             card.Controls.Add(btnAbout);
-            card.Controls.Add(btnExit);
+            card.Controls.Add(btnExitMenu);
             card.Controls.Add(lblFooter);
 
             pnlMainMenu.Controls.Add(card);
             this.Controls.Add(pnlMainMenu);
         }
 
-        private Button CreateMenuButton(string text, Color bg, Color fg, Point loc)
+        private void UpdateMainMenuLayout()
+        {
+            bool hasSaved = SessionPersistence.HasSavedSession();
+            if (btnResumeGame != null)
+            {
+                btnResumeGame.Visible = hasSaved;
+                if (hasSaved)
+                {
+                    var saved = SessionPersistence.LoadSession();
+                    string modeStr = (saved.GameMode == "Challenge") ? $"Mùa {saved.SeasonId}-Màn {saved.LevelId}" : "Endless";
+                    btnResumeGame.Text = $"▶  TIẾP TỤC VÁN CHƠI ({modeStr} • {saved.Score:#,##0} ĐIỂM)";
+                }
+            }
+
+            int startY = hasSaved ? 184 : 194;
+            int spacing = hasSaved ? 56 : 64;
+
+            if (hasSaved && btnResumeGame != null)
+            {
+                btnResumeGame.Location = new Point(40, startY);
+                startY += spacing;
+            }
+
+            if (btnPlayEndless != null) btnPlayEndless.Location = new Point(40, startY);
+            if (btnPlayStory != null) btnPlayStory.Location = new Point(40, startY + spacing);
+            if (btnLeaderboard != null) btnLeaderboard.Location = new Point(40, startY + spacing * 2);
+            if (btnAbout != null) btnAbout.Location = new Point(40, startY + spacing * 3);
+            if (btnExitMenu != null) btnExitMenu.Location = new Point(40, startY + spacing * 4);
+        }
+
+        private Button CreateMenuButton(string text, Color bg, Color fg, Point loc, Size size)
         {
             Button btn = new Button
             {
                 Text = text,
                 Location = loc,
+                Size = size,
                 BackColor = bg,
                 ForeColor = fg,
                 FlatStyle = FlatStyle.Flat,
@@ -294,8 +328,188 @@ namespace BlockBlast
                 Cursor = Cursors.Hand
             };
             btn.FlatAppearance.BorderSize = 0;
+            btn.SizeChanged += (s, e) => ApplyRoundedRegion(btn, 12);
             ApplyRoundedRegion(btn, 12);
             return btn;
+        }
+
+        // ================================================================
+        //  1B. POPUP MODAL CÀI ĐẶT & TẠM DỪNG (SETTINGS & PAUSE MODAL)
+        // ================================================================
+        private void BuildSettingsModal()
+        {
+            pnlSettingsModal = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.FromArgb(210, 16, 19, 28),
+                Visible = false
+            };
+            pnlSettingsModal.MouseDown += (s, e) => { /* Chặn click xuyên thấu */ };
+
+            Panel card = new Panel
+            {
+                Name = "pnlSettingsCard",
+                Size = new Size(500, 560),
+                BackColor = Color.FromArgb(24, 28, 43)
+            };
+            ApplyRoundedRegion(card, 20);
+
+            Button btnCloseTop = CreateTopCloseButton(card, () => ResumeFromSettings());
+
+            Label lblTitle = new Label
+            {
+                Text = "⚙️ CÀI ĐẶT & TẠM DỪNG",
+                Font = new Font("Segoe UI", 19f, FontStyle.Bold),
+                ForeColor = Color.FromArgb(255, 196, 77),
+                TextAlign = ContentAlignment.MiddleCenter,
+                Size = new Size(480, 36),
+                Location = new Point(10, 18)
+            };
+
+            // Badge trạng thái ván đấu hiện tại
+            Panel pnlStatusBadge = new Panel
+            {
+                Size = new Size(420, 54),
+                Location = new Point(40, 68),
+                BackColor = Color.FromArgb(32, 37, 56)
+            };
+            ApplyRoundedRegion(pnlStatusBadge, 12);
+
+            lblSettingsStatusTitle = new Label
+            {
+                Text = "TRẠNG THÁI: ĐANG TẠM DỪNG",
+                Font = new Font("Segoe UI", 10.5f, FontStyle.Bold),
+                ForeColor = Color.FromArgb(0, 210, 211),
+                Location = new Point(14, 8),
+                Size = new Size(392, 20)
+            };
+
+            lblSettingsStatusDetail = new Label
+            {
+                Text = "Điểm số hiện tại: 0  |  Kỷ lục cá nhân: 0",
+                Font = new Font("Segoe UI", 9f, FontStyle.Regular),
+                ForeColor = Color.FromArgb(170, 175, 195),
+                Location = new Point(14, 28),
+                Size = new Size(392, 20)
+            };
+
+            pnlStatusBadge.Controls.Add(lblSettingsStatusTitle);
+            pnlStatusBadge.Controls.Add(lblSettingsStatusDetail);
+
+            int btnY = 138;
+            int btnSpacing = 58;
+
+            // 1. TIẾP TỤC CHƠI
+            Button btnResume = CreateMenuButton("▶  TIẾP TỤC CHƠI", Color.FromArgb(46, 204, 113), Color.White, new Point(40, btnY), new Size(420, 48));
+            btnResume.Click += (s, e) => ResumeFromSettings();
+
+            // 2. BẬT/TẮT ÂM THANH
+            btnSettingsAudio = CreateMenuButton(
+                SoundManager.IsMuted ? "🔇  ÂM THANH: ĐANG TẮT" : "🔊  ÂM THANH: ĐANG BẬT",
+                Color.FromArgb(48, 54, 80),
+                Color.FromArgb(255, 196, 77),
+                new Point(40, btnY + btnSpacing),
+                new Size(420, 48)
+            );
+            btnSettingsAudio.Click += (s, e) =>
+            {
+                SoundManager.IsMuted = !SoundManager.IsMuted;
+                SaveAudioSettingsSilently();
+                btnSettingsAudio.Text = SoundManager.IsMuted ? "🔇  ÂM THANH: ĐANG TẮT" : "🔊  ÂM THANH: ĐANG BẬT";
+                if (btnSound != null) btnSound.Text = SoundManager.IsMuted ? "LOA: TẮT" : "LOA: BẬT";
+                if (!SoundManager.IsMuted) SoundManager.PlayPop();
+            };
+
+            // 3. CHƠI LẠI VÁN MỚI
+            Button btnRestart = CreateMenuButton("🔄  CHƠI LẠI VÁN MỚI", Color.FromArgb(230, 126, 34), Color.White, new Point(40, btnY + btnSpacing * 2), new Size(420, 48));
+            btnRestart.Click += (s, e) =>
+            {
+                pnlSettingsModal.Visible = false;
+                gameManager.IsPaused = false;
+                RestartGameFromSettings();
+            };
+
+            // 4. VỀ MENU CHÍNH
+            Button btnToMenu = CreateMenuButton("🏠  VỀ MENU CHÍNH", Color.FromArgb(56, 62, 88), Color.White, new Point(40, btnY + btnSpacing * 3), new Size(420, 48));
+            btnToMenu.Click += (s, e) =>
+            {
+                pnlSettingsModal.Visible = false;
+                SaveCurrentSessionSilently();
+                ShowMainMenu();
+            };
+
+            // 5. THOÁT GAME
+            Button btnQuit = CreateMenuButton("❌  THOÁT TRÒ CHƠI", Color.FromArgb(36, 40, 58), Color.FromArgb(238, 82, 83), new Point(40, btnY + btnSpacing * 4), new Size(420, 48));
+            btnQuit.Click += (s, e) => btnExit_Click(s, e);
+
+            Label lblFooter = new Label
+            {
+                Text = "Tiến trình ván đấu luôn được tự động lưu trữ an toàn khi thoát hoặc trở về menu.",
+                Font = new Font("Segoe UI", 8.5f, FontStyle.Regular),
+                ForeColor = Color.FromArgb(90, 95, 120),
+                TextAlign = ContentAlignment.MiddleCenter,
+                Size = new Size(480, 24),
+                Location = new Point(10, 520)
+            };
+
+            card.Controls.Add(btnCloseTop);
+            card.Controls.Add(lblTitle);
+            card.Controls.Add(pnlStatusBadge);
+            card.Controls.Add(btnResume);
+            card.Controls.Add(btnSettingsAudio);
+            card.Controls.Add(btnRestart);
+            card.Controls.Add(btnToMenu);
+            card.Controls.Add(btnQuit);
+            card.Controls.Add(lblFooter);
+
+            pnlSettingsModal.Controls.Add(card);
+            this.Controls.Add(pnlSettingsModal);
+        }
+
+        public void ShowSettingsModal()
+        {
+            CancelDrag();
+            gameManager.IsPaused = true;
+
+            if (currentGameMode == GameMode.Story && activeChallenge != null)
+            {
+                lblSettingsStatusTitle.Text = $"ĐANG TẠM DỪNG: MÙA {activeChallenge.SeasonId} - {activeChallenge.LevelTitle.ToUpper()}";
+                lblSettingsStatusDetail.Text = $"Tiến độ: {activeChallenge.LinesCleared}/{activeChallenge.TargetLines} Dòng  |  Nước đi: {activeChallenge.MovesLeft}/{activeChallenge.MaxMoves}";
+            }
+            else
+            {
+                lblSettingsStatusTitle.Text = "ĐANG TẠM DỪNG: CHẾ ĐỘ CHƠI TỰ DO (ENDLESS)";
+                lblSettingsStatusDetail.Text = $"Điểm hiện tại: {gameManager.CurrentScore:#,##0}  |  Kỷ lục cá nhân: {gameManager.HighScore:#,##0}";
+            }
+
+            if (btnSettingsAudio != null)
+            {
+                btnSettingsAudio.Text = SoundManager.IsMuted ? "🔇  ÂM THANH: ĐANG TẮT" : "🔊  ÂM THANH: ĐANG BẬT";
+            }
+
+            pnlSettingsModal.Visible = true;
+            pnlSettingsModal.BringToFront();
+            LayoutMenuModals();
+            pnlBoard.Invalidate();
+        }
+
+        public void ResumeFromSettings()
+        {
+            if (pnlSettingsModal != null) pnlSettingsModal.Visible = false;
+            gameManager.IsPaused = false;
+            pnlBoard.Invalidate();
+        }
+
+        private void RestartGameFromSettings()
+        {
+            if (currentGameMode == GameMode.Story && activeChallenge != null)
+            {
+                StartChallenge(activeChallenge.SeasonId, activeChallenge.LevelId);
+            }
+            else
+            {
+                RestartEndlessGame();
+            }
         }
 
         private Button CreateTopCloseButton(Control card, Action onClose)
@@ -424,7 +638,7 @@ namespace BlockBlast
             flpMedalsList = new FlowLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                AutoScroll = true,
+                AutoScroll = false,
                 FlowDirection = FlowDirection.LeftToRight,
                 WrapContents = true,
                 BackColor = Color.Transparent
@@ -443,7 +657,7 @@ namespace BlockBlast
             pnlCareerStatsContent = new Panel
             {
                 Dock = DockStyle.Fill,
-                AutoScroll = true,
+                AutoScroll = false,
                 BackColor = Color.Transparent
             };
             pnlTabStats.Controls.Add(pnlCareerStatsContent);
@@ -519,46 +733,48 @@ namespace BlockBlast
 
                 Panel badgeCard = new Panel
                 {
-                    Size = new Size(312, 104),
-                    BackColor = isUnlocked ? Color.FromArgb(32, 37, 56) : Color.FromArgb(20, 23, 34),
-                    Margin = new Padding(0, 0, 12, 12)
+                    Size = new Size(322, 68),
+                    BackColor = isUnlocked ? Color.FromArgb(32, 38, 58) : Color.FromArgb(22, 25, 38),
+                    Margin = new Padding(0, 0, 8, 8)
                 };
-                ApplyRoundedRegion(badgeCard, 14);
+                badgeCard.SizeChanged += (s, e) => ApplyRoundedRegion(badgeCard, 12);
+                ApplyRoundedRegion(badgeCard, 12);
 
                 Label lblIcon = new Label
                 {
                     Text = m.Icon,
-                    Font = new Font("Segoe UI", 24f),
-                    Size = new Size(50, 50),
-                    Location = new Point(12, 16),
+                    Font = new Font("Segoe UI", 20f),
+                    Size = new Size(42, 42),
+                    Location = new Point(8, 13),
                     TextAlign = ContentAlignment.MiddleCenter
                 };
 
                 Label lblName = new Label
                 {
                     Text = m.Title,
-                    Font = new Font("Segoe UI", 11f, FontStyle.Bold),
-                    ForeColor = isUnlocked ? m.Color : Color.FromArgb(120, 125, 140),
-                    Location = new Point(66, 12),
-                    Size = new Size(234, 22)
+                    Font = new Font("Segoe UI", 10.5f, FontStyle.Bold),
+                    ForeColor = isUnlocked ? m.Color : Color.FromArgb(180, 185, 205),
+                    Location = new Point(54, 8),
+                    Size = new Size(185, 22)
                 };
 
                 Label lblDesc = new Label
                 {
                     Text = m.Desc,
-                    Font = new Font("Segoe UI", 9f),
-                    ForeColor = isUnlocked ? Color.FromArgb(170, 175, 195) : Color.FromArgb(80, 85, 100),
-                    Location = new Point(66, 36),
-                    Size = new Size(234, 34)
+                    Font = new Font("Segoe UI", 8.5f, FontStyle.Regular),
+                    ForeColor = isUnlocked ? Color.FromArgb(170, 175, 195) : Color.FromArgb(115, 122, 142),
+                    Location = new Point(54, 30),
+                    Size = new Size(185, 32)
                 };
 
                 Label lblStatus = new Label
                 {
-                    Text = isUnlocked ? "✓ ĐÃ ĐẠT" : "🔒 CHƯA MỞ",
-                    Font = new Font("Segoe UI", 9f, FontStyle.Bold),
-                    ForeColor = isUnlocked ? Color.FromArgb(46, 204, 113) : Color.FromArgb(100, 105, 120),
-                    Location = new Point(66, 74),
-                    Size = new Size(234, 20)
+                    Text = isUnlocked ? "✓ ĐÃ ĐẠT" : "🔒 KHÓA",
+                    Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+                    ForeColor = isUnlocked ? Color.FromArgb(46, 204, 113) : Color.FromArgb(120, 125, 145),
+                    TextAlign = ContentAlignment.MiddleRight,
+                    Location = new Point(238, 12),
+                    Size = new Size(76, 20)
                 };
 
                 badgeCard.Controls.Add(lblIcon);
@@ -813,10 +1029,12 @@ namespace BlockBlast
                     Size = new Size(158, 80),
                     Margin = new Padding(0, 0, 12, 12),
                     FlatStyle = FlatStyle.Flat,
-                    Cursor = isUnlocked ? Cursors.Hand : Cursors.Default,
-                    Enabled = isUnlocked
+                    Cursor = isUnlocked ? Cursors.Hand : Cursors.Default
                 };
                 btnL.FlatAppearance.BorderSize = 0;
+
+                int sId = currentCarouselSeason;
+                int lId = l;
 
                 if (isCompleted)
                 {
@@ -824,6 +1042,7 @@ namespace BlockBlast
                     btnL.BackColor = Color.FromArgb(39, 174, 96);
                     btnL.ForeColor = Color.White;
                     btnL.Font = new Font("Segoe UI", 11f, FontStyle.Bold);
+                    btnL.Click += (s, e) => ShowStoryBriefingModal(sId, lId);
                 }
                 else if (isUnlocked)
                 {
@@ -831,18 +1050,22 @@ namespace BlockBlast
                     btnL.BackColor = accent;
                     btnL.ForeColor = (currentCarouselSeason == 8) ? Color.FromArgb(18, 21, 32) : Color.White;
                     btnL.Font = new Font("Segoe UI", 11f, FontStyle.Bold);
+                    btnL.Click += (s, e) => ShowStoryBriefingModal(sId, lId);
                 }
                 else
                 {
                     btnL.Text = $"🔒 MÀN {l}\n(Khóa)";
-                    btnL.BackColor = Color.FromArgb(28, 31, 46);
-                    btnL.ForeColor = Color.FromArgb(90, 95, 110);
+                    btnL.BackColor = Color.FromArgb(28, 33, 48);
+                    btnL.ForeColor = Color.FromArgb(150, 158, 180);
                     btnL.Font = new Font("Segoe UI", 10.5f, FontStyle.Regular);
+                    btnL.Click += (s, e) =>
+                    {
+                        SoundManager.PlayPop();
+                        MessageBox.Show($"Màn {lId} hiện đang bị phong ấn!\nHãy vượt qua các màn thử thách trước để mở khóa.", "Chưa Mở Khóa", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    };
                 }
 
-                int sId = currentCarouselSeason;
-                int lId = l;
-                btnL.Click += (s, e) => ShowStoryBriefingModal(sId, lId);
+                btnL.SizeChanged += (s, e) => ApplyRoundedRegion(btnL, 12);
                 ApplyRoundedRegion(btnL, 12);
 
                 flpLevelGrid.Controls.Add(btnL);
@@ -1560,6 +1783,7 @@ namespace BlockBlast
             if (this.ClientSize.Width <= 0 || this.ClientSize.Height <= 0) return;
 
             CenterModalCard(pnlMainMenu, "pnlMenuCenterCard");
+            CenterModalCard(pnlSettingsModal, "pnlSettingsCard");
             CenterModalCard(pnlLeaderboardModal, "pnlLeaderboardCard");
             CenterModalCard(pnlAboutModal, "pnlAboutCard");
             CenterModalCard(pnlStorySelectModal, "pnlStorySelectCard");
@@ -1585,6 +1809,7 @@ namespace BlockBlast
         public void HideAllOverlays()
         {
             if (pnlMainMenu != null) pnlMainMenu.Visible = false;
+            if (pnlSettingsModal != null) pnlSettingsModal.Visible = false;
             if (pnlLeaderboardModal != null) pnlLeaderboardModal.Visible = false;
             if (pnlAboutModal != null) pnlAboutModal.Visible = false;
             if (pnlStorySelectModal != null) pnlStorySelectModal.Visible = false;
@@ -1620,19 +1845,7 @@ namespace BlockBlast
         {
             PrepareModalDisplay();
             UpdateUserCardInfo();
-
-            // Kiểm tra trạng thái ván đấu dở dang để hiển thị nút Tiếp Tục
-            bool hasSaved = SessionPersistence.HasSavedSession();
-            if (btnResumeGame != null)
-            {
-                btnResumeGame.Visible = hasSaved;
-                if (hasSaved)
-                {
-                    var saved = SessionPersistence.LoadSession();
-                    string modeStr = (saved.GameMode == "Challenge") ? $"Mùa {saved.SeasonId}-Màn {saved.LevelId}" : "Endless";
-                    btnResumeGame.Text = $"▶  TIẾP TỤC VÁN CHƠI ({modeStr} • {saved.Score} ĐIỂM)";
-                }
-            }
+            UpdateMainMenuLayout();
 
             pnlMainMenu.Visible = true;
             pnlMainMenu.BringToFront();
