@@ -7,8 +7,9 @@ namespace BlockBlast
     public class GameManager
     {
         public GameBoard Board { get; private set; }
-        public int CurrentScore { get; private set; }
+        public int CurrentScore { get; set; }
         public int HighScore { get; set; }
+        public int ComboCount { get; set; } = 0;
         public bool IsPaused { get; set; }
 
         private readonly Random rand = new Random();
@@ -21,12 +22,9 @@ namespace BlockBlast
             HighScore = 0;
         }
 
-        public BlockPiece CreateRandomPiece()
+        public BlockPiece CreateRandomPiece(int difficulty = 1)
         {
-            int shapeIndex = rand.Next(BlockPiece.AllShapes.Count);
-            int[,] shape = BlockPiece.AllShapes[shapeIndex];
-            int colorIndex = rand.Next(1, 8); // Chọn màu ngẫu nhiên từ 1 đến 7
-            return new BlockPiece(shape, colorIndex);
+            return DDAEngine.GenerateAdaptivePiece(Board, difficulty);
         }
 
         public void AddScore(int points)

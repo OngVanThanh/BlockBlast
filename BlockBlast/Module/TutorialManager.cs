@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 
 namespace BlockBlast.Module
 {
@@ -121,6 +121,16 @@ namespace BlockBlast.Module
         {
             CurrentLevelIndex = 0;
             IsTutorialActive = true;
+        }
+
+        public void StartTutorial()
+        {
+            ResetTutorial();
+        }
+
+        public void EndTutorial()
+        {
+            IsTutorialActive = false;
         }
     }
 }

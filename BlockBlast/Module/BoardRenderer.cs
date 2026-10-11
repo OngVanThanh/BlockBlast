@@ -311,7 +311,8 @@ namespace BlockBlast
         /// <param name="flashingCells">Các ô đang nổ (Point.X = cột, Point.Y = hàng) - vẽ màu trắng sáng.</param>
         /// <param name="flashScale">1 = chớp trắng đủ kích thước; giảm dần về 0 = thu nhỏ và tan biến.</param>
         public static void RenderBoard(Graphics g, Size panelSize, GameBoard board, int[,] draggingShape, int draggingColorIndex,
-                                       int hoverRow, int hoverCol, HashSet<Point> flashingCells = null, float flashScale = 1f)
+                                       int hoverRow, int hoverCol, HashSet<Point> flashingCells = null, float flashScale = 1f,
+                                       int awakeningStep = -1, Color? themeBorderColor = null)
         {
             g.SmoothingMode = SmoothingMode.AntiAlias;
 
@@ -320,14 +321,29 @@ namespace BlockBlast
             int boardDim = GetBoardPixelSize(cellSize);
             int linePixelLength = BOARD_SIZE * cellSize + (BOARD_SIZE - 1) * GAP;
 
-            // 0. Khung nền bàn cờ
+            // 0. Khung nền bàn cờ (Tô viền theo màu nguyên tố nếu có)
             Rectangle frame = new Rectangle(1, 1, boardDim - 2, boardDim - 2);
+            Color frameBorder = themeBorderColor.HasValue ? themeBorderColor.Value : BoardFrameBorderColor;
+            float borderWidth = themeBorderColor.HasValue ? 2.5f : 1.5f;
+
             using (GraphicsPath framePath = CreateRoundedPath(frame, 12))
             using (Brush frameBrush = new SolidBrush(BoardFrameColor))
-            using (Pen framePen = new Pen(BoardFrameBorderColor, 1.5f))
+            using (Pen framePen = new Pen(frameBorder, borderWidth))
             {
                 g.FillPath(frameBrush, framePath);
                 g.DrawPath(framePen, framePath);
+            }
+
+            // Sóng năng lượng thức tỉnh nguyên tố (Awakening Wave Pulse)
+            if (awakeningStep >= 0 && themeBorderColor.HasValue)
+            {
+                float ringRadius = (awakeningStep + 1) * (boardDim / 5.5f);
+                int alpha = Math.Max(0, 210 - awakeningStep * 50);
+                using (Pen pulsePen = new Pen(Color.FromArgb(alpha, themeBorderColor.Value), 5f))
+                {
+                    Point center = new Point(boardDim / 2, boardDim / 2);
+                    g.DrawEllipse(pulsePen, center.X - ringRadius, center.Y - ringRadius, ringRadius * 2, ringRadius * 2);
+                }
             }
 
             // Xác định các hàng/cột sẽ nổ nếu thả khối tại vị trí hover (Line Preview)
@@ -571,7 +587,7 @@ namespace BlockBlast
             RenderFloatingText(g, "TẠM DỪNG", new PointF(boardDim / 2f, boardDim / 2f), 1f);
         }
 
-        public static void RenderGameOverOverlay(Graphics g, Size boardSize, int score, int highScore, bool isNewRecord)
+        public static void RenderGameOverOverlay(Graphics g, Size boardSize, int score, int highScore, bool isNewRecord, string customTitle = "GAME OVER", string customSubtitle = null)
         {
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
@@ -581,28 +597,39 @@ namespace BlockBlast
 
             // 1. Lớp phủ làm tối cao cấp (Semi-transparent Dim Overlay)
             int radius = Math.Max(8, w / 25);
+            Color borderColor = (customTitle.IndexOf("THẮNG", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 customTitle.IndexOf("VICTORY", StringComparison.OrdinalIgnoreCase) >= 0)
+                ? Color.FromArgb(80, 46, 213, 115)
+                : Color.FromArgb(60, 255, 159, 67);
+
             using (GraphicsPath path = CreateRoundedPath(rect, radius))
             using (Brush overlayBrush = new SolidBrush(Color.FromArgb(235, 14, 17, 26)))
-            using (Pen borderPen = new Pen(Color.FromArgb(60, 255, 159, 67), 2f))
+            using (Pen borderPen = new Pen(borderColor, 2f))
             {
                 g.FillPath(overlayBrush, path);
                 g.DrawPath(borderPen, path);
             }
 
-            // 2. Tiêu đề "GAME OVER" (Cam Neon rực rỡ)
+            // 2. Tiêu đề (Cam Neon rực rỡ hoặc Xanh ngọc lục bảo chiến thắng)
+            Color titleColor = (customTitle.IndexOf("THẮNG", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                customTitle.IndexOf("VICTORY", StringComparison.OrdinalIgnoreCase) >= 0)
+                ? Color.FromArgb(46, 213, 115)
+                : Color.FromArgb(255, 159, 67);
+
             using (Font titleFont = new Font("Segoe UI", 26f, FontStyle.Bold))
-            using (Brush titleBrush = new SolidBrush(Color.FromArgb(255, 159, 67)))
+            using (Brush titleBrush = new SolidBrush(titleColor))
             using (StringFormat sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
             {
-                g.DrawString("GAME OVER", titleFont, titleBrush, new RectangleF(0, h * 0.12f, w, 50), sf);
+                g.DrawString(customTitle, titleFont, titleBrush, new RectangleF(0, h * 0.12f, w, 50), sf);
             }
 
-            // 3. Điểm số "ĐIỂM: 450" (Trắng tinh, to rõ)
+            // 3. Điểm số hoặc dòng thông báo phụ (Trắng tinh, to rõ)
+            string displaySubtitle = customSubtitle ?? $"ĐIỂM: {score}";
             using (Font scoreFont = new Font("Segoe UI", 18f, FontStyle.Bold))
             using (Brush scoreBrush = new SolidBrush(Color.White))
             using (StringFormat sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
             {
-                g.DrawString($"ĐIỂM: {score}", scoreFont, scoreBrush, new RectangleF(0, h * 0.30f, w, 40), sf);
+                g.DrawString(displaySubtitle, scoreFont, scoreBrush, new RectangleF(0, h * 0.30f, w, 40), sf);
             }
 
             // 4. Kỷ lục "🎉 KỶ LỤC MỚI 🎉" hoặc "KỶ LỤC: 1050"
