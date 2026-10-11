@@ -1,7 +1,9 @@
-﻿using BlockBlast.Module;
+using BlockBlast.Module;
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.Windows.Forms;
 
 namespace BlockBlast
@@ -11,6 +13,13 @@ namespace BlockBlast
         public const int BOARD_SIZE = 8; // Thay thế hoặc tham chiếu cố định
         public const int GAP = 4;
         public const int MARGIN = 8;
+
+        // ===== Bảng màu Dark Slate =====
+        public static readonly Color BoardFrameColor = Color.FromArgb(18, 21, 32);
+        public static readonly Color BoardFrameBorderColor = Color.FromArgb(40, 45, 66);
+        public static readonly Color EmptyCellBorderColor = Color.FromArgb(36, 41, 60);
+
+        private static FontFamily uiFontFamily;
 
         // Hàm hỗ trợ tính toán CELL_SIZE phù hợp với kích thước Panel hiện tại
         public static int CalculateCellSize(Size panelSize)
@@ -29,6 +38,98 @@ namespace BlockBlast
             return Math.Max(cellSize, 10);
         }
 
+        // Kích thước (px) toàn bộ vùng bàn cờ, bao gồm lề
+        public static int GetBoardPixelSize(int cellSize)
+        {
+            return MARGIN * 2 + BOARD_SIZE * cellSize + (BOARD_SIZE - 1) * GAP;
+        }
+
+        // Hình chữ nhật của 1 ô trên bàn cờ (toạ độ pnlBoard)
+        public static Rectangle GetCellRect(int row, int col, int cellSize)
+        {
+            return new Rectangle(MARGIN + col * (cellSize + GAP), MARGIN + row * (cellSize + GAP), cellSize, cellSize);
+        }
+
+        // Kích thước thực tế (px) của một khối gạch khi vẽ theo cellSize của bàn cờ
+        public static Size GetPieceSize(int[,] shape, int cellSize)
+        {
+            int rows = shape.GetLength(0);
+            int cols = shape.GetLength(1);
+            return new Size(cols * cellSize + (cols - 1) * GAP, rows * cellSize + (rows - 1) * GAP);
+        }
+
+        public static bool TryGetCellAt(Point boardPoint, Size panelSize, out int row, out int col)
+        {
+            int cellSize = CalculateCellSize(panelSize);
+            int totalBoardDim = MARGIN * 2 + BOARD_SIZE * cellSize + (BOARD_SIZE - 1) * GAP;
+
+            row = -1; col = -1;
+            if (boardPoint.X < MARGIN || boardPoint.Y < MARGIN) return false;
+
+            col = (boardPoint.X - MARGIN) / (cellSize + GAP);
+            row = (boardPoint.Y - MARGIN) / (cellSize + GAP);
+
+            if (row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE)
+            {
+                // Kiểm tra con trỏ có nằm đúng trong phạm vi ô (tránh nằm trong khoảng GAP)
+                int cellX = MARGIN + col * (cellSize + GAP);
+                int cellY = MARGIN + row * (cellSize + GAP);
+                if (boardPoint.X >= cellX && boardPoint.X <= cellX + cellSize &&
+                    boardPoint.Y >= cellY && boardPoint.Y <= cellY + cellSize)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public static bool GetCellFromPoint(Point pt, Size panelSize, out int row, out int col)
+        {
+            return TryGetCellAt(pt, panelSize, out row, out col);
+        }
+
+        /// <summary>
+        /// Cơ chế "hút nam châm": làm tròn toạ độ góc trên-trái của khối gạch về ô gần nhất.
+        /// Không có vùng chết trong khoảng GAP nên khối gạch không bị khựng/trượt khi rê chuột.
+        /// </summary>
+        public static bool GetMagneticCellAt(Point boardPoint, Size panelSize, out int row, out int col)
+        {
+            int cellSize = CalculateCellSize(panelSize);
+            int step = cellSize + GAP;
+            row = -1; col = -1;
+
+            // Tính vị trí tương đối so với lề
+            double relX = boardPoint.X - MARGIN;
+            double relY = boardPoint.Y - MARGIN;
+
+            col = (int)Math.Round(relX / step, MidpointRounding.AwayFromZero);
+            row = (int)Math.Round(relY / step, MidpointRounding.AwayFromZero);
+
+            return (row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE);
+        }
+
+        // ================================================================
+        //  PRIMITIVES
+        // ================================================================
+
+        public static GraphicsPath CreateRoundedPath(Rectangle rect, int radius)
+        {
+            GraphicsPath path = new GraphicsPath();
+            int d = Math.Min(radius * 2, Math.Min(rect.Width, rect.Height));
+            if (d < 2)
+            {
+                path.AddRectangle(rect);
+                return path;
+            }
+
+            path.AddArc(rect.X, rect.Y, d, d, 180, 90);
+            path.AddArc(rect.Right - d, rect.Y, d, d, 270, 90);
+            path.AddArc(rect.Right - d, rect.Bottom - d, d, d, 0, 90);
+            path.AddArc(rect.X, rect.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+
         public static void FillRoundedRect(Graphics g, Brush brush, int x, int y, int width, int height, int radius)
         {
             using (GraphicsPath path = new GraphicsPath())
@@ -45,31 +146,224 @@ namespace BlockBlast
             }
         }
 
-        public static void RenderBoard(Graphics g, Size panelSize, GameBoard board, int[,] draggingShape, int draggingColorIndex, int hoverRow, int hoverCol)
+        public static Color Lighten(Color c, float amount)
+        {
+            return Color.FromArgb(c.A,
+                (int)(c.R + (255 - c.R) * amount),
+                (int)(c.G + (255 - c.G) * amount),
+                (int)(c.B + (255 - c.B) * amount));
+        }
+
+        public static Color Darken(Color c, float amount)
+        {
+            return Color.FromArgb(c.A,
+                (int)(c.R * (1 - amount)),
+                (int)(c.G * (1 - amount)),
+                (int)(c.B * (1 - amount)));
+        }
+
+        private static Color WithAlpha(Color c, int alpha)
+        {
+            return Color.FromArgb(Math.Max(0, Math.Min(255, alpha)), c.R, c.G, c.B);
+        }
+
+        private static FontFamily UiFontFamily
+        {
+            get
+            {
+                if (uiFontFamily == null)
+                {
+                    try { uiFontFamily = new FontFamily("Segoe UI"); }
+                    catch (ArgumentException) { uiFontFamily = FontFamily.GenericSansSerif; }
+                }
+                return uiFontFamily;
+            }
+        }
+
+        // Ô trống: nền Dark Slate + viền mảnh
+        public static void DrawEmptyCell(Graphics g, Rectangle rect)
+        {
+            int radius = Math.Max(3, rect.Width / 6);
+            using (GraphicsPath path = CreateRoundedPath(rect, radius))
+            using (Brush brush = new SolidBrush(BlockPiece.GetColor(0)))
+            using (Pen border = new Pen(EmptyCellBorderColor, 1f))
+            {
+                g.FillPath(brush, path);
+                g.DrawPath(border, path);
+            }
+        }
+
+        /// <summary>
+        /// Vẽ 1 viên gạch phong cách 3D Gem/Bevel:
+        /// nền gradient màu gốc + viền sáng trên-trái + viền bóng dưới-phải + vệt bóng kính phía trên.
+        /// </summary>
+        public static void DrawGemCell(Graphics g, Color baseColor, Rectangle rect, int alpha = 255)
+        {
+            if (rect.Width < 4 || rect.Height < 4 || alpha <= 0) return;
+
+            float a = Math.Min(255, alpha) / 255f;
+            int radius = Math.Max(3, rect.Width / 6);
+
+            using (GraphicsPath body = CreateRoundedPath(rect, radius))
+            {
+                // 1. Nền khối gạch: màu gốc, gradient dọc rất nhẹ để có chiều sâu
+                Rectangle gradRect = new Rectangle(rect.X, rect.Y - 1, rect.Width, rect.Height + 2);
+                using (LinearGradientBrush brush = new LinearGradientBrush(gradRect,
+                           WithAlpha(Lighten(baseColor, 0.10f), alpha),
+                           WithAlpha(Darken(baseColor, 0.08f), alpha),
+                           LinearGradientMode.Vertical))
+                {
+                    g.FillPath(brush, body);
+                }
+
+                // 2. Viền nổi (bevel) bên trong khối
+                int bevel = Math.Max(2, rect.Width / 9);
+                int inset = (bevel + 1) / 2;
+                Rectangle inner = Rectangle.Inflate(rect, -inset, -inset);
+
+                using (GraphicsPath edge = CreateRoundedPath(inner, Math.Max(2, radius - inset)))
+                {
+                    // 2a. Inner Highlight - nửa trên-trái
+                    GraphicsState state = g.Save();
+                    using (GraphicsPath tri = new GraphicsPath())
+                    {
+                        tri.AddPolygon(new[]
+                        {
+                            new Point(rect.Left, rect.Top),
+                            new Point(rect.Right, rect.Top),
+                            new Point(rect.Left, rect.Bottom)
+                        });
+                        g.SetClip(tri, CombineMode.Intersect);
+                        using (Pen pen = new Pen(Color.FromArgb((int)(70 * a), 255, 255, 255), bevel))
+                        {
+                            g.DrawPath(pen, edge);
+                        }
+                    }
+                    g.Restore(state);
+
+                    // 2b. Inner Shadow - nửa dưới-phải
+                    state = g.Save();
+                    using (GraphicsPath tri = new GraphicsPath())
+                    {
+                        tri.AddPolygon(new[]
+                        {
+                            new Point(rect.Right, rect.Top),
+                            new Point(rect.Right, rect.Bottom),
+                            new Point(rect.Left, rect.Bottom)
+                        });
+                        g.SetClip(tri, CombineMode.Intersect);
+                        using (Pen pen = new Pen(Color.FromArgb((int)(60 * a), 0, 0, 0), bevel))
+                        {
+                            g.DrawPath(pen, edge);
+                        }
+                    }
+                    g.Restore(state);
+                }
+
+                // 3. Vệt bóng kính (gloss) ở 40% phía trên
+                int glossH = Math.Max(2, inner.Height * 2 / 5);
+                Rectangle gloss = new Rectangle(inner.X + bevel, inner.Y + bevel / 2, Math.Max(2, inner.Width - bevel * 2), glossH);
+                using (GraphicsPath glossPath = CreateRoundedPath(gloss, Math.Max(2, radius / 2)))
+                using (LinearGradientBrush glossBrush = new LinearGradientBrush(
+                           new Rectangle(gloss.X, gloss.Y - 1, gloss.Width, gloss.Height + 2),
+                           Color.FromArgb((int)(55 * a), 255, 255, 255),
+                           Color.FromArgb(0, 255, 255, 255),
+                           LinearGradientMode.Vertical))
+                {
+                    g.FillPath(glossBrush, glossPath);
+                }
+            }
+        }
+
+        // Viền phát sáng (glow) quanh một hàng/cột sắp nổ
+        private static void DrawLineGlow(Graphics g, Rectangle lineRect, Color baseColor)
+        {
+            Color glow = Lighten(baseColor, 0.45f);
+            int radius = Math.Max(4, lineRect.Height / 5);
+
+            // Lớp phủ sáng nhẹ bên trong
+            using (GraphicsPath fillPath = CreateRoundedPath(lineRect, radius))
+            using (Brush overlay = new SolidBrush(Color.FromArgb(28, 255, 255, 255)))
+            {
+                g.FillPath(overlay, fillPath);
+            }
+
+            // 3 lớp viền: ngoài mờ -> trong đậm, tạo cảm giác "phát sáng"
+            int[] inflate = { 5, 3, 1 };
+            float[] widths = { 5f, 3.5f, 2f };
+            int[] alphas = { 40, 90, 235 };
+            for (int i = 0; i < inflate.Length; i++)
+            {
+                Rectangle r = Rectangle.Inflate(lineRect, inflate[i], inflate[i]);
+                using (GraphicsPath path = CreateRoundedPath(r, radius + inflate[i]))
+                using (Pen pen = new Pen(WithAlpha(glow, alphas[i]), widths[i]))
+                {
+                    pen.LineJoin = LineJoin.Round;
+                    g.DrawPath(pen, path);
+                }
+            }
+        }
+
+        // ================================================================
+        //  BOARD
+        // ================================================================
+
+        /// <param name="flashingCells">Các ô đang nổ (Point.X = cột, Point.Y = hàng) - vẽ màu trắng sáng.</param>
+        /// <param name="flashScale">1 = chớp trắng đủ kích thước; giảm dần về 0 = thu nhỏ và tan biến.</param>
+        public static void RenderBoard(Graphics g, Size panelSize, GameBoard board, int[,] draggingShape, int draggingColorIndex,
+                                       int hoverRow, int hoverCol, HashSet<Point> flashingCells = null, float flashScale = 1f)
         {
             g.SmoothingMode = SmoothingMode.AntiAlias;
 
             // Tính CELL_SIZE động
             int cellSize = CalculateCellSize(panelSize);
+            int boardDim = GetBoardPixelSize(cellSize);
+            int linePixelLength = BOARD_SIZE * cellSize + (BOARD_SIZE - 1) * GAP;
+
+            // 0. Khung nền bàn cờ
+            Rectangle frame = new Rectangle(1, 1, boardDim - 2, boardDim - 2);
+            using (GraphicsPath framePath = CreateRoundedPath(frame, 12))
+            using (Brush frameBrush = new SolidBrush(BoardFrameColor))
+            using (Pen framePen = new Pen(BoardFrameBorderColor, 1.5f))
+            {
+                g.FillPath(frameBrush, framePath);
+                g.DrawPath(framePen, framePath);
+            }
+
+            // Xác định các hàng/cột sẽ nổ nếu thả khối tại vị trí hover (Line Preview)
+            bool hasPreview = draggingShape != null && hoverRow != -1 && hoverCol != -1;
+            List<int> previewRows = new List<int>();
+            List<int> previewCols = new List<int>();
+            if (hasPreview)
+            {
+                board.GetLinesCompletedByPlacement(draggingShape, hoverRow, hoverCol, previewRows, previewCols);
+            }
+            Color dragColor = BlockPiece.GetColor(draggingColorIndex);
 
             // 1. Vẽ 64 ô của bàn chơi
             for (int r = 0; r < BOARD_SIZE; r++)
             {
                 for (int c = 0; c < BOARD_SIZE; c++)
                 {
-                    int x = MARGIN + c * (cellSize + GAP);
-                    int y = MARGIN + r * (cellSize + GAP);
+                    if (flashingCells != null && flashingCells.Contains(new Point(c, r))) continue; // vẽ ở bước 4
 
-                    Color color = BlockPiece.GetColor(board.GetCell(r, c));
-                    using (Brush brush = new SolidBrush(color))
+                    Rectangle rect = GetCellRect(r, c, cellSize);
+                    int value = board.GetCell(r, c);
+                    if (value == 0)
                     {
-                        FillRoundedRect(g, brush, x, y, cellSize, cellSize, Math.Max(2, cellSize / 8));
+                        DrawEmptyCell(g, rect);
+                    }
+                    else
+                    {
+                        // Ô thuộc hàng/cột sắp nổ được "nhuộm" theo màu khối đang kéo
+                        bool inBlastLine = hasPreview && (previewRows.Contains(r) || previewCols.Contains(c));
+                        DrawGemCell(g, inBlastLine ? dragColor : BlockPiece.GetColor(value), rect);
                     }
                 }
             }
 
-            // 2. Vẽ hiệu ứng xem trước (Hover Preview)
-            if (draggingShape != null && hoverRow != -1 && hoverCol != -1)
+            // 2. Vẽ hiệu ứng xem trước (Ghost Preview) - bán trong suốt Alpha 130
+            if (hasPreview)
             {
                 int rows = draggingShape.GetLength(0);
                 int cols = draggingShape.GetLength(1);
@@ -78,31 +372,131 @@ namespace BlockBlast
                 {
                     for (int c = 0; c < cols; c++)
                     {
-                        if (draggingShape[r, c] != 0)
+                        if (draggingShape[r, c] == 0) continue;
+
+                        int targetR = hoverRow + r;
+                        int targetC = hoverCol + c;
+                        if (targetR >= 0 && targetR < BOARD_SIZE && targetC >= 0 && targetC < BOARD_SIZE)
                         {
-                            int targetR = hoverRow + r;
-                            int targetC = hoverCol + c;
-
-                            if (targetR >= 0 && targetR < BOARD_SIZE && targetC >= 0 && targetC < BOARD_SIZE)
-                            {
-                                int x = MARGIN + targetC * (cellSize + GAP);
-                                int y = MARGIN + targetR * (cellSize + GAP);
-
-                                Color previewColor = Color.FromArgb(130, BlockPiece.GetColor(draggingColorIndex));
-                                using (Brush brush = new SolidBrush(previewColor))
-                                {
-                                    FillRoundedRect(g, brush, x, y, cellSize, cellSize, Math.Max(2, cellSize / 8));
-                                }
-                            }
+                            DrawGemCell(g, dragColor, GetCellRect(targetR, targetC, cellSize), 130);
                         }
+                    }
+                }
+
+                // 3. Line Preview Glow cho các hàng/cột sắp nổ
+                foreach (int r in previewRows)
+                {
+                    DrawLineGlow(g, new Rectangle(MARGIN, MARGIN + r * (cellSize + GAP), linePixelLength, cellSize), dragColor);
+                }
+                foreach (int c in previewCols)
+                {
+                    DrawLineGlow(g, new Rectangle(MARGIN + c * (cellSize + GAP), MARGIN, cellSize, linePixelLength), dragColor);
+                }
+            }
+
+            // 4. Các ô đang nổ: chớp trắng -> thu nhỏ & tan biến
+            if (flashingCells != null && flashingCells.Count > 0)
+            {
+                float scale = Math.Max(0f, Math.Min(1f, flashScale));
+                foreach (Point p in flashingCells)
+                {
+                    Rectangle rect = GetCellRect(p.Y, p.X, cellSize);
+                    DrawEmptyCell(g, rect);
+
+                    int size = (int)(cellSize * scale);
+                    if (size < 2) continue;
+
+                    Rectangle shrink = new Rectangle(rect.X + (cellSize - size) / 2, rect.Y + (cellSize - size) / 2, size, size);
+                    int alpha = (int)(255 * Math.Min(1f, 0.25f + scale));
+
+                    using (GraphicsPath path = CreateRoundedPath(shrink, Math.Max(2, size / 6)))
+                    using (Brush white = new SolidBrush(Color.FromArgb(alpha, Color.White)))
+                    using (Pen halo = new Pen(Color.FromArgb(alpha / 3, 255, 255, 255), 4f))
+                    {
+                        g.DrawPath(halo, path);
+                        g.FillPath(white, path);
                     }
                 }
             }
         }
 
+        // ================================================================
+        //  DRAGGING PIECE / DOCK / OVERLAYS
+        // ================================================================
+
+        /// <summary>Vẽ khối gạch kích thước thật (độ đậm 100%) tại origin, kèm bóng đổ khi được nhấc lên.</summary>
+        public static void RenderFloatingPiece(Graphics g, int[,] shape, int colorIndex, int cellSize, Point origin, bool drawShadow)
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            int rows = shape.GetLength(0);
+            int cols = shape.GetLength(1);
+            Color color = BlockPiece.GetColor(colorIndex);
+
+            if (drawShadow)
+            {
+                using (Brush shadow = new SolidBrush(Color.FromArgb(70, 0, 0, 0)))
+                {
+                    for (int r = 0; r < rows; r++)
+                        for (int c = 0; c < cols; c++)
+                        {
+                            if (shape[r, c] == 0) continue;
+                            Rectangle rect = new Rectangle(origin.X + c * (cellSize + GAP) + 3, origin.Y + r * (cellSize + GAP) + 7, cellSize, cellSize);
+                            using (GraphicsPath p = CreateRoundedPath(rect, Math.Max(3, cellSize / 6)))
+                            {
+                                g.FillPath(shadow, p);
+                            }
+                        }
+                }
+            }
+
+            for (int r = 0; r < rows; r++)
+                for (int c = 0; c < cols; c++)
+                {
+                    if (shape[r, c] == 0) continue;
+                    DrawGemCell(g, color, new Rectangle(origin.X + c * (cellSize + GAP), origin.Y + r * (cellSize + GAP), cellSize, cellSize));
+                }
+        }
+
+        /// <summary>Tạo bitmap ARGB (nền trong suốt) của khối gạch đang bay, dùng cho cửa sổ lớp phủ kéo-thả.</summary>
+        public static Bitmap CreateFloatingPieceBitmap(int[,] shape, int colorIndex, int cellSize, int padding)
+        {
+            Size pieceSize = GetPieceSize(shape, cellSize);
+            Bitmap bmp = new Bitmap(pieceSize.Width + padding * 2, pieceSize.Height + padding * 2, PixelFormat.Format32bppArgb);
+            using (Graphics g = Graphics.FromImage(bmp))
+            {
+                g.Clear(Color.Transparent);
+                RenderFloatingPiece(g, shape, colorIndex, cellSize, new Point(padding, padding), true);
+            }
+            return bmp;
+        }
+
+        public static void RenderEmptyDockSlot(Graphics g, Rectangle bounds)
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            Rectangle slotRect = new Rectangle(bounds.X + 8, bounds.Y + 8, bounds.Width - 16, bounds.Height - 16);
+            if (slotRect.Width <= 0 || slotRect.Height <= 0) return;
+
+            using (GraphicsPath slotPath = CreateRoundedPath(slotRect, 14))
+            using (Brush slotBg = new SolidBrush(Color.FromArgb(26, 29, 46)))
+            using (Pen slotBorder = new Pen(Color.FromArgb(45, 50, 77), 1.5f))
+            {
+                slotBorder.DashStyle = DashStyle.Dash;
+                slotBorder.DashPattern = new float[] { 4f, 4f };
+                g.FillPath(slotBg, slotPath);
+                g.DrawPath(slotBorder, slotPath);
+            }
+        }
+
         public static void RenderDockPiece(Graphics g, Panel panel)
         {
-            if (panel == null || panel.Tag == null) return;
+            if (panel == null) return;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            if (panel.Tag == null)
+            {
+                RenderEmptyDockSlot(g, panel.ClientRectangle);
+                return;
+            }
 
             BlockPiece piece = (BlockPiece)panel.Tag;
             g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -114,11 +508,12 @@ namespace BlockBlast
             int miniCell = Math.Min((panel.Width - 20) / 5, (panel.Height - 20) / 5);
             int miniGap = 3;
 
-            int totalW = cols * (miniCell + miniGap);
-            int totalH = rows * (miniCell + miniGap);
+            int totalW = cols * (miniCell + miniGap) - miniGap;
+            int totalH = rows * (miniCell + miniGap) - miniGap;
             int startX = (panel.Width - totalW) / 2;
             int startY = (panel.Height - totalH) / 2;
 
+            Color color = BlockPiece.GetColor(piece.ColorIndex);
             for (int r = 0; r < rows; r++)
             {
                 for (int c = 0; c < cols; c++)
@@ -127,13 +522,97 @@ namespace BlockBlast
                     {
                         int x = startX + c * (miniCell + miniGap);
                         int y = startY + r * (miniCell + miniGap);
-
-                        using (Brush b = new SolidBrush(BlockPiece.GetColor(piece.ColorIndex)))
-                        {
-                            FillRoundedRect(g, b, x, y, miniCell, miniCell, 4);
-                        }
+                        DrawGemCell(g, color, new Rectangle(x, y, miniCell, miniCell));
                     }
                 }
+            }
+        }
+
+        /// <summary>Chữ nổi (+100, COMBO x2!, MEGA BLAST!) có viền tối và gradient vàng ánh kim.</summary>
+        public static void RenderFloatingText(Graphics g, string text, PointF center, float alpha)
+        {
+            if (string.IsNullOrEmpty(text) || alpha <= 0f) return;
+
+            int a = (int)(255 * Math.Min(1f, alpha));
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            using (GraphicsPath path = new GraphicsPath())
+            using (StringFormat sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
+            {
+                path.AddString(text, UiFontFamily, (int)FontStyle.Bold, 34f, center, sf);
+                RectangleF bounds = path.GetBounds();
+                if (bounds.Width < 1 || bounds.Height < 1) return;
+
+                using (Pen outline = new Pen(Color.FromArgb(a * 220 / 255, 12, 14, 24), 6f) { LineJoin = LineJoin.Round })
+                {
+                    g.DrawPath(outline, path);
+                }
+                using (LinearGradientBrush fill = new LinearGradientBrush(
+                           RectangleF.Inflate(bounds, 0, 1),
+                           Color.FromArgb(a, 255, 240, 150),
+                           Color.FromArgb(a, 255, 160, 40),
+                           LinearGradientMode.Vertical))
+                {
+                    g.FillPath(fill, path);
+                }
+            }
+        }
+
+        // Lớp phủ khi tạm dừng
+        public static void RenderPausedOverlay(Graphics g, Size panelSize)
+        {
+            int boardDim = GetBoardPixelSize(CalculateCellSize(panelSize));
+            Rectangle area = new Rectangle(1, 1, boardDim - 2, boardDim - 2);
+            using (GraphicsPath path = CreateRoundedPath(area, 12))
+            using (Brush dim = new SolidBrush(Color.FromArgb(170, 10, 12, 20)))
+            {
+                g.FillPath(dim, path);
+            }
+            RenderFloatingText(g, "TẠM DỪNG", new PointF(boardDim / 2f, boardDim / 2f), 1f);
+        }
+
+        public static void RenderGameOverOverlay(Graphics g, Size boardSize, int score, int highScore, bool isNewRecord)
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+            int w = boardSize.Width;
+            int h = boardSize.Height;
+            Rectangle rect = new Rectangle(0, 0, w, h);
+
+            // 1. Lớp phủ làm tối cao cấp (Semi-transparent Dim Overlay)
+            int radius = Math.Max(8, w / 25);
+            using (GraphicsPath path = CreateRoundedPath(rect, radius))
+            using (Brush overlayBrush = new SolidBrush(Color.FromArgb(235, 14, 17, 26)))
+            using (Pen borderPen = new Pen(Color.FromArgb(60, 255, 159, 67), 2f))
+            {
+                g.FillPath(overlayBrush, path);
+                g.DrawPath(borderPen, path);
+            }
+
+            // 2. Tiêu đề "GAME OVER" (Cam Neon rực rỡ)
+            using (Font titleFont = new Font("Segoe UI", 26f, FontStyle.Bold))
+            using (Brush titleBrush = new SolidBrush(Color.FromArgb(255, 159, 67)))
+            using (StringFormat sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
+            {
+                g.DrawString("GAME OVER", titleFont, titleBrush, new RectangleF(0, h * 0.12f, w, 50), sf);
+            }
+
+            // 3. Điểm số "ĐIỂM: 450" (Trắng tinh, to rõ)
+            using (Font scoreFont = new Font("Segoe UI", 18f, FontStyle.Bold))
+            using (Brush scoreBrush = new SolidBrush(Color.White))
+            using (StringFormat sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
+            {
+                g.DrawString($"ĐIỂM: {score}", scoreFont, scoreBrush, new RectangleF(0, h * 0.30f, w, 40), sf);
+            }
+
+            // 4. Kỷ lục "🎉 KỶ LỤC MỚI 🎉" hoặc "KỶ LỤC: 1050"
+            string recordText = isNewRecord ? $"🎉 KỶ LỤC MỚI: {score} 🎉" : $"KỶ LỤC: {highScore}";
+            Color recordColor = isNewRecord ? Color.FromArgb(255, 215, 0) : Color.FromArgb(160, 165, 181);
+            using (Font recordFont = new Font("Segoe UI", 13.5f, FontStyle.Bold))
+            using (Brush recordBrush = new SolidBrush(recordColor))
+            using (StringFormat sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
+            {
+                g.DrawString(recordText, recordFont, recordBrush, new RectangleF(0, h * 0.44f, w, 36), sf);
             }
         }
     }

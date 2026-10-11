@@ -1,4 +1,4 @@
-﻿using BlockBlast.Module;
+using BlockBlast.Module;
 using System;
 using System.Collections.Generic;
 
@@ -8,18 +8,12 @@ namespace BlockBlast
     {
         public GameBoard Board { get; private set; }
         public int CurrentScore { get; private set; }
-        public int HighScore { get; private set; }
+        public int HighScore { get; set; }
         public bool IsPaused { get; set; }
 
         private readonly Random rand = new Random();
         public const int BOARD_SIZE = 8;
-        private int[,] grid = new int[BOARD_SIZE, BOARD_SIZE];
 
-        // Hàm trả về mảng 8x8 để fGamePlay vẽ
-        public int[,] GetGrid()
-        {
-            return grid;
-        }
         public GameManager()
         {
             Board = new GameBoard();
@@ -29,10 +23,9 @@ namespace BlockBlast
 
         public BlockPiece CreateRandomPiece()
         {
-            // Logic sinh khối ngẫu nhiên của bạn...
-            int[,] shape = new int[,] { { 1, 1 }, { 1, 1 } }; // Ví dụ
-            Random rand = new Random();
-            int colorIndex = rand.Next(1, 6);
+            int shapeIndex = rand.Next(BlockPiece.AllShapes.Count);
+            int[,] shape = BlockPiece.AllShapes[shapeIndex];
+            int colorIndex = rand.Next(1, 8); // Chọn màu ngẫu nhiên từ 1 đến 7
             return new BlockPiece(shape, colorIndex);
         }
 

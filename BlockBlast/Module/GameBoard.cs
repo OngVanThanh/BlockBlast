@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace BlockBlast.Module
@@ -73,6 +73,25 @@ namespace BlockBlast.Module
             List<int> fullRows = new List<int>();
             List<int> fullCols = new List<int>();
 
+            FindFullLines(fullRows, fullCols);
+            ClearLines(fullRows, fullCols);
+
+            return CalculateLineScore(fullRows.Count + fullCols.Count);
+        }
+
+        // Công thức điểm: mỗi dòng 100 điểm + thưởng combo 50 điểm cho mỗi dòng thêm
+        public static int CalculateLineScore(int totalCleared)
+        {
+            if (totalCleared <= 0) return 0;
+            return totalCleared * 100 + (totalCleared - 1) * 50;
+        }
+
+        // Tìm các hàng/cột đang đầy (KHÔNG xóa) - dùng để chạy hoạt họa trước khi xóa
+        public void FindFullLines(List<int> fullRows, List<int> fullCols)
+        {
+            fullRows.Clear();
+            fullCols.Clear();
+
             // Kiểm tra hàng đầy
             for (int r = 0; r < BOARD_SIZE; r++)
             {
@@ -94,25 +113,61 @@ namespace BlockBlast.Module
                 }
                 if (full) fullCols.Add(c);
             }
+        }
 
+        // Xóa các hàng/cột chỉ định
+        public void ClearLines(IEnumerable<int> rows, IEnumerable<int> cols)
+        {
             // Xóa hàng đầy
-            foreach (int r in fullRows)
+            foreach (int r in rows)
             {
                 for (int c = 0; c < BOARD_SIZE; c++) grid[r, c] = 0;
             }
 
             // Xóa cột đầy
-            foreach (int c in fullCols)
+            foreach (int c in cols)
             {
                 for (int r = 0; r < BOARD_SIZE; r++) grid[r, c] = 0;
             }
+        }
 
-            int totalCleared = fullRows.Count + fullCols.Count;
-            if (totalCleared > 0)
+        // Mô phỏng (không thay đổi bàn cờ): nếu đặt shape tại (startRow, startCol)
+        // thì những hàng/cột nào sẽ được lấp đầy? Dùng cho hiệu ứng Line Preview Glow.
+        public void GetLinesCompletedByPlacement(int[,] shape, int startRow, int startCol,
+                                                 List<int> rows, List<int> cols)
+        {
+            rows.Clear();
+            cols.Clear();
+            if (shape == null) return;
+
+            for (int r = 0; r < BOARD_SIZE; r++)
             {
-                return totalCleared * 100 + (totalCleared - 1) * 50;
+                bool full = true;
+                for (int c = 0; c < BOARD_SIZE; c++)
+                {
+                    if (grid[r, c] == 0 && !ShapeCovers(shape, startRow, startCol, r, c)) { full = false; break; }
+                }
+                if (full) rows.Add(r);
             }
-            return 0;
+
+            for (int c = 0; c < BOARD_SIZE; c++)
+            {
+                bool full = true;
+                for (int r = 0; r < BOARD_SIZE; r++)
+                {
+                    if (grid[r, c] == 0 && !ShapeCovers(shape, startRow, startCol, r, c)) { full = false; break; }
+                }
+                if (full) cols.Add(c);
+            }
+        }
+
+        private static bool ShapeCovers(int[,] shape, int startRow, int startCol, int r, int c)
+        {
+            int sr = r - startRow;
+            int sc = c - startCol;
+            return sr >= 0 && sr < shape.GetLength(0) &&
+                   sc >= 0 && sc < shape.GetLength(1) &&
+                   shape[sr, sc] != 0;
         }
 
         // Nạp ma trận bàn chơi từ Tutorial / Level
